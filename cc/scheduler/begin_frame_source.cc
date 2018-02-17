@@ -144,12 +144,9 @@ DelayBasedBeginFrameSource::~DelayBasedBeginFrameSource() = default;
 void DelayBasedBeginFrameSource::OnUpdateVSyncParameters(
     base::TimeTicks timebase,
     base::TimeDelta interval) {
-  if (!authoritative_interval_.is_zero()) {
-    interval = authoritative_interval_;
-  } else if (interval.is_zero()) {
-    // TODO(brianderson): We should not be receiving 0 intervals.
-    interval = BeginFrameArgs::DefaultInterval();
-  }
+  /* force disable vsync */
+
+  interval = BeginFrameArgs::ZeroInterval();
 
   last_timebase_ = timebase;
   time_source_->SetTimebaseAndInterval(timebase, interval);
@@ -157,7 +154,7 @@ void DelayBasedBeginFrameSource::OnUpdateVSyncParameters(
 
 void DelayBasedBeginFrameSource::SetAuthoritativeVSyncInterval(
     base::TimeDelta interval) {
-  authoritative_interval_ = interval;
+  authoritative_interval_ = BeginFrameArgs::ZeroInterval();
   OnUpdateVSyncParameters(last_timebase_, interval);
 }
 
@@ -222,7 +219,7 @@ void DelayBasedBeginFrameSource::RemoveObserver(BeginFrameObserver* obs) {
 }
 
 bool DelayBasedBeginFrameSource::IsThrottled() const {
-  return true;
+  return false;
 }
 
 void DelayBasedBeginFrameSource::OnTimerTick() {

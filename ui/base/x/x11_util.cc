@@ -69,6 +69,7 @@ namespace ui {
 namespace {
 
 int DefaultX11ErrorHandler(XDisplay* d, XErrorEvent* e) {
+  return 0;
   if (base::MessageLoop::current()) {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::Bind(&LogErrorEventDescription, d, *e));

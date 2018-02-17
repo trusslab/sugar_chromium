@@ -38,6 +38,7 @@
 #include "content/renderer/gpu/compositor_dependencies.h"
 #include "content/renderer/layout_test_dependencies.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
+#include "gpu/itc/client/gpu_thread_host.h"
 #include "media/media_features.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/binding.h"
@@ -51,6 +52,12 @@
 #if defined(OS_MACOSX)
 #include "third_party/WebKit/public/web/mac/WebScrollbarTheme.h"
 #endif
+#include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
+
+#include "mojo/edk/embedder/scoped_ipc_support.h"
+#include "gpu/itc/service/gpu_thread_channel_manager.h"
+#include "content/public/browser/gpu_utils.h"
+#include "content/renderer/gpu/render_gpu_thread_host.h"
 
 class SkBitmap;
 struct WorkerProcessMsg_CreateWorker_Params;
@@ -102,7 +109,7 @@ class Extension;
 }
 
 namespace content {
-
+class BrowseGpuMemoryBufferManager; 
 class AppCacheDispatcher;
 class AecDumpMessageFilter;
 class AudioInputMessageFilter;
@@ -182,6 +189,10 @@ class CONTENT_EXPORT RenderThreadImpl
   static void RegisterSchemes();
 
   // RenderThread implementation:
+   std::unique_ptr<mojo::edk::ScopedIPCSupport> mojo_ipc_support_;
+  
+  int RendererGpuThreadStarted();
+  bool UsingInProcessGpu() const;
   bool Send(IPC::Message* msg) override;
   IPC::SyncChannel* GetChannel() override;
   std::string GetLocale() override;
@@ -246,6 +257,8 @@ class CONTENT_EXPORT RenderThreadImpl
   // If there is a pending asynchronous request, it will be completed by the
   // time this routine returns.
   scoped_refptr<gpu::GpuChannelHost> EstablishGpuChannelSync();
+  gpu::GpuChannelHost* EstablishWebglGpuChannelSync(/*CauseForGpuLaunch*/);
+  scoped_refptr<gpu::GpuThreadHost> EstablishGpuThreadChannel();
 
   gpu::GpuMemoryBufferManager* GetGpuMemoryBufferManager();
 
@@ -359,6 +372,7 @@ class CONTENT_EXPORT RenderThreadImpl
     return shared_bitmap_manager_.get();
   }
 
+
   mojom::RenderFrameMessageFilter* render_frame_message_filter();
   mojom::RenderMessageFilter* render_message_filter();
   const scoped_refptr<mojom::ThreadSafeRenderMessageFilterAssociatedPtr>&
@@ -367,6 +381,8 @@ class CONTENT_EXPORT RenderThreadImpl
   // Get the GPU channel. Returns NULL if the channel is not established or
   // has been lost.
   gpu::GpuChannelHost* GetGpuChannel();
+  
+  gpu::GpuChannelHost* GetWebglGpuChannel();
 
   // Returns a SingleThreadTaskRunner instance corresponding to the message loop
   // of the thread on which file operations should be run. Must be called
@@ -377,6 +393,9 @@ class CONTENT_EXPORT RenderThreadImpl
   // of the thread on which media operations should be run. Must be called
   // on the renderer's main thread.
   scoped_refptr<base::SingleThreadTaskRunner> GetMediaThreadTaskRunner();
+
+  scoped_refptr<base::SingleThreadTaskRunner> GetGpuThreadTaskRunner();
+  scoped_refptr<base::SingleThreadTaskRunner> GetRenderThreadTaskRunner();
 
   // A TaskRunner instance that runs tasks on the raster worker pool.
   base::TaskRunner* GetWorkerTaskRunner();
@@ -443,7 +462,7 @@ class CONTENT_EXPORT RenderThreadImpl
     // RenderView's share (if any). If there is no common host, this function is
     // called with an empty string.
     void SetCommonHost(const std::string& host);
-
+ 
     // The current common host of the RenderViews; empty string if there is no
     // common host.
     std::string common_host_;
@@ -650,6 +669,9 @@ class CONTENT_EXPORT RenderThreadImpl
 
   // The channel from the renderer process to the GPU process.
   scoped_refptr<gpu::GpuChannelHost> gpu_channel_;
+  scoped_refptr<gpu::GpuThreadHost> gpu_thread_channel_;
+  scoped_refptr<RenderGpuThreadHost> render_gpu_thread_host_;
+  scoped_refptr<base::SingleThreadTaskRunner> io_thread_task_runner_;
 
   // The message loop of the renderer main thread.
   // This message loop should be destructed before the RenderThreadImpl
@@ -671,6 +693,8 @@ class CONTENT_EXPORT RenderThreadImpl
 
   // Thread for running multimedia operations (e.g., video decoding).
   std::unique_ptr<base::Thread> media_thread_;
+
+  std::unique_ptr<base::Thread> gpu_thread_;
 
   // Will point to appropriate task runner after initialization,
   // regardless of whether |compositor_thread_| is overriden.
@@ -709,6 +733,7 @@ class CONTENT_EXPORT RenderThreadImpl
 
   scoped_refptr<base::SingleThreadTaskRunner>
       main_thread_compositor_task_runner_;
+
 
   // Compositor settings.
   bool is_gpu_rasterization_forced_;
@@ -772,6 +797,8 @@ class CONTENT_EXPORT RenderThreadImpl
 
   int32_t client_id_;
 
+  
+  std::unique_ptr<base::Thread> indexed_db_thread_;
   DISALLOW_COPY_AND_ASSIGN(RenderThreadImpl);
 };
 

@@ -105,6 +105,8 @@ target(link_target_type, "service_sources") {
     "mailbox_manager.h",
     "mailbox_manager_impl.cc",
     "mailbox_manager_impl.h",
+    "mailbox_manager_webgl_impl.cc",
+    "mailbox_manager_webgl_impl.h",
     "mailbox_manager_sync.cc",
     "mailbox_manager_sync.h",
     "memory_program_cache.cc",
@@ -143,6 +145,9 @@ target(link_target_type, "service_sources") {
     "vertex_array_manager.h",
     "vertex_attrib_manager.cc",
     "vertex_attrib_manager.h",
+    "vmdisp.cc",
+    "vmdisp.h",
+    "i915_drm.h",
   ]
 
   configs += [

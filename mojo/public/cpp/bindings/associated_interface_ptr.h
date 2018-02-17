@@ -72,10 +72,11 @@ class AssociatedInterfacePtr {
   void Bind(AssociatedInterfacePtrInfo<Interface> info,
             scoped_refptr<base::SingleThreadTaskRunner> runner =
                 base::ThreadTaskRunnerHandle::Get()) {
-    reset();
+	reset();
 
-    if (info.is_valid())
+    if (info.is_valid()) {
       internal_state_.Bind(std::move(info), std::move(runner));
+	}
   }
 
   bool is_bound() const { return internal_state_.is_bound(); }

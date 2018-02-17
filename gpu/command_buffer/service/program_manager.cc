@@ -33,6 +33,7 @@
 #include "gpu/command_buffer/service/shader_manager.h"
 #include "third_party/re2/src/re2/re2.h"
 #include "ui/gl/gl_version_info.h"
+#include "base/prints.h"
 
 using base::TimeDelta;
 using base::TimeTicks;

@@ -105,6 +105,9 @@
 #include "wtf/text/StringUTF8Adaptor.h"
 #include "wtf/typed_arrays/ArrayBufferContents.h"
 
+#include "base/prints.h"
+#define use_sugar
+
 namespace blink {
 
 namespace {
@@ -586,7 +589,11 @@ static void createContextProviderOnMainThread(
     WaitableEvent* waitableEvent) {
   ASSERT(isMainThread());
   creationInfo->createdContextProvider = WTF::wrapUnique(
+	  #ifdef use_sugar
+      Platform::current()->createOffscreenGraphicsContext3DProviderForWebgl(
+	  #else
       Platform::current()->createOffscreenGraphicsContext3DProvider(
+	  #endif
           creationInfo->contextAttributes, creationInfo->url, 0,
           creationInfo->glInfo));
   waitableEvent->signal();
@@ -652,7 +659,11 @@ WebGLRenderingContextBase::createContextProviderInternal(
                            : scriptState->getExecutionContext()->url();
   if (isMainThread()) {
     contextProvider = WTF::wrapUnique(
+	    #ifdef use_sugar
+        Platform::current()->createOffscreenGraphicsContext3DProviderForWebgl(
+	    #else
         Platform::current()->createOffscreenGraphicsContext3DProvider(
+	    #endif
             contextAttributes, url, 0, &glInfo));
   } else {
     contextProvider =
@@ -698,6 +709,7 @@ WebGLRenderingContextBase::createWebGraphicsContext3DProvider(
     return nullptr;
   }
   Settings* settings = frame->settings();
+  settings->setWebGLEnabled(true);
 
   // The FrameLoaderClient might block creation of a new WebGL context despite
   // the page settings; in particular, if WebGL contexts were lost one or more
@@ -7498,7 +7510,11 @@ void WebGLRenderingContextBase::maybeRestoreContext(TimerBase*) {
                              : offscreenCanvas()->getExecutionContext()->url();
   if (isMainThread()) {
     contextProvider = WTF::wrapUnique(
+	    #ifdef use_sugar
+        Platform::current()->createOffscreenGraphicsContext3DProviderForWebgl(
+	    #else
         Platform::current()->createOffscreenGraphicsContext3DProvider(
+	    #endif
             attributes, url, 0, &glInfo));
   } else {
     contextProvider =

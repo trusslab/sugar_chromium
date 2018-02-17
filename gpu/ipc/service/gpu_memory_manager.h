@@ -22,6 +22,7 @@
 namespace gpu {
 
 class GpuChannelManager;
+class GpuThreadChannelManager;
 class GpuMemoryTrackingGroup;
 struct VideoMemoryUsageStats;
 
@@ -29,6 +30,7 @@ class GPU_EXPORT GpuMemoryManager :
     public base::SupportsWeakPtr<GpuMemoryManager> {
  public:
   explicit GpuMemoryManager(GpuChannelManager* channel_manager);
+  explicit GpuMemoryManager(GpuThreadChannelManager* channel_manager);
   ~GpuMemoryManager();
 
   // Retrieve GPU Resource consumption statistics for the task manager
@@ -59,12 +61,15 @@ class GPU_EXPORT GpuMemoryManager :
   bool EnsureGPUMemoryAvailable(uint64_t size_needed);
 
   GpuChannelManager* channel_manager_;
+  GpuThreadChannelManager* thread_channel_manager_;
 
   // All context groups' tracking structures
   TrackingGroupMap tracking_groups_;
 
   // The current total memory usage, and historical maximum memory usage
   uint64_t bytes_allocated_current_;
+
+  bool webgl_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(GpuMemoryManager);
 };

@@ -45,6 +45,8 @@
 #include "ui/gl/gl_image_shared_memory.h"
 #include "ui/gl/gl_surface.h"
 
+#include "base/prints.h"
+
 namespace gpu {
 namespace {
 
@@ -743,6 +745,8 @@ bool GpuChannel::OnControlMessageReceived(const IPC::Message& msg) {
   IPC_BEGIN_MESSAGE_MAP(GpuChannel, msg)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_CreateCommandBuffer,
                         OnCreateCommandBuffer)
+    IPC_MESSAGE_HANDLER(GpuChannelMsg_CreateCommandBufferOutProcessSync,
+                        OnCreateCommandBufferOutProcessSync)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_DestroyCommandBuffer,
                         OnDestroyCommandBuffer)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_GetDriverBugWorkArounds,
@@ -902,7 +906,30 @@ void GpuChannel::OnCreateCommandBuffer(
   std::unique_ptr<base::SharedMemory> shared_state_shm(
       new base::SharedMemory(shared_state_handle, false));
   std::unique_ptr<GpuCommandBufferStub> stub =
-      CreateCommandBuffer(init_params, route_id, std::move(shared_state_shm));
+      CreateCommandBuffer(init_params, route_id, std::move(shared_state_shm), false, 0);
+  if (stub) {
+    *result = true;
+    *capabilities = stub->decoder()->GetCapabilities();
+    stubs_[route_id] = std::move(stub);
+  } else {
+    *result = false;
+    *capabilities = gpu::Capabilities();
+  }
+}
+
+void GpuChannel::OnCreateCommandBufferOutProcessSync(
+    const GPUCreateCommandBufferConfig& init_params,
+    int32_t route_id,
+    base::SharedMemoryHandle shared_state_handle,
+	int32_t renderer_pid,
+    bool* result,
+    gpu::Capabilities* capabilities) {
+  TRACE_EVENT2("gpu", "GpuChannel::OnCreateCommandBuffer", "route_id", route_id,
+               "offscreen", (init_params.surface_handle == kNullSurfaceHandle));
+  std::unique_ptr<base::SharedMemory> shared_state_shm(
+      new base::SharedMemory(shared_state_handle, false));
+  std::unique_ptr<GpuCommandBufferStub> stub =
+      CreateCommandBuffer(init_params, route_id, std::move(shared_state_shm), true, renderer_pid);
   if (stub) {
     *result = true;
     *capabilities = stub->decoder()->GetCapabilities();
@@ -916,7 +943,9 @@ void GpuChannel::OnCreateCommandBuffer(
 std::unique_ptr<GpuCommandBufferStub> GpuChannel::CreateCommandBuffer(
     const GPUCreateCommandBufferConfig& init_params,
     int32_t route_id,
-    std::unique_ptr<base::SharedMemory> shared_state_shm) {
+    std::unique_ptr<base::SharedMemory> shared_state_shm,
+	bool has_out_process_sync,
+	int32_t renderer_pid) {
   if (init_params.surface_handle != kNullSurfaceHandle &&
       !allow_view_command_buffers_) {
     DLOG(ERROR) << "GpuChannel::CreateCommandBuffer(): attempt to create a "
@@ -967,7 +996,8 @@ std::unique_ptr<GpuCommandBufferStub> GpuChannel::CreateCommandBuffer(
     queue = CreateStream(stream_id, stream_priority);
 
   std::unique_ptr<GpuCommandBufferStub> stub(GpuCommandBufferStub::Create(
-      this, share_group, init_params, route_id, std::move(shared_state_shm)));
+      this, share_group, init_params, route_id, std::move(shared_state_shm),
+	  has_out_process_sync, renderer_pid));
 
   if (!stub) {
     DestroyStreamIfNecessary(queue);

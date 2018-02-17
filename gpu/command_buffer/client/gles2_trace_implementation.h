@@ -24,6 +24,7 @@ class GLES2_IMPL_EXPORT GLES2TraceImplementation
   // this file instead of having to edit some template or the code generator.
   #include "gpu/command_buffer/client/gles2_trace_implementation_autogen.h"
 
+
  private:
   GLES2Interface* gl_;
 };

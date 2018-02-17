@@ -742,6 +742,7 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   if (extensions.Contains("GL_OES_rgb8_rgba8") || gl::HasDesktopGLFeatures()) {
+
     AddExtensionString("GL_OES_rgb8_rgba8");
     validators_.render_buffer_format.AddValue(GL_RGB8_OES);
     validators_.render_buffer_format.AddValue(GL_RGBA8_OES);
@@ -758,6 +759,7 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   InitializeFloatAndHalfFloatFeatures(extensions);
+
 
   // Check for multisample support
   if (!workarounds_.disable_chromium_framebuffer_multisample) {
@@ -945,6 +947,7 @@ void FeatureInfo::InitializeFeatures() {
   // TODO(gman): Add support for these extensions.
   //     GL_OES_depth32
 
+
   if (extensions.Contains("GL_ANGLE_texture_usage")) {
     feature_flags_.angle_texture_usage = true;
     AddExtensionString("GL_ANGLE_texture_usage");
@@ -954,6 +957,7 @@ void FeatureInfo::InitializeFeatures() {
   bool have_occlusion_query =
       gl_version_info_->IsAtLeastGLES(3, 0) ||
       gl_version_info_->IsAtLeastGL(3, 3);
+
   bool have_ext_occlusion_query_boolean =
       extensions.Contains("GL_EXT_occlusion_query_boolean");
   bool have_arb_occlusion_query2 =

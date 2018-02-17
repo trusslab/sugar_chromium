@@ -386,6 +386,7 @@ std::unique_ptr<Channel> Channel::Create(
     const IPC::ChannelHandle& channel_handle,
     Mode mode,
     Listener* listener) {
+  fprintf(stderr, "success[0]: %s\n", __PRETTY_FUNCTION__);
   return base::MakeUnique<ChannelNacl>(channel_handle, mode, listener);
 }
 

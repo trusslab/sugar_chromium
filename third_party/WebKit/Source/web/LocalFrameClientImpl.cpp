@@ -109,6 +109,8 @@
 
 #include <memory>
 
+#include "base/prints.h"
+
 namespace blink {
 
 namespace {

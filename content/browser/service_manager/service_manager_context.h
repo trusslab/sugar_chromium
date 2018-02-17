@@ -27,6 +27,7 @@ class CONTENT_EXPORT ServiceManagerContext {
 
   // Returns a service_manager::Connector that can be used on the IO thread.
   static service_manager::Connector* GetConnectorForIOThread();
+  static service_manager::Connector* GetConnectorForWebglIOThread();
 
  private:
   class InProcessServiceManagerContext;

@@ -12,6 +12,8 @@
 #include "skia/ext/texture_handle.h"
 #include "third_party/skia/include/gpu/GrContext.h"
 
+#include "base/prints.h"
+
 namespace blink {
 
 namespace {

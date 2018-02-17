@@ -90,6 +90,7 @@ class GPU_EXPORT CommandBufferService : public CommandBufferServiceBase {
 
   // Setup the shared memory that shared state should be copied into.
   void SetSharedStateBuffer(std::unique_ptr<BufferBacking> shared_state_buffer);
+  void SetSharedStateBuffer(CommandBufferSharedState* shared_state);
 
   // Copy the current state into the shared state transfer buffer.
   void UpdateState();
@@ -98,6 +99,8 @@ class GPU_EXPORT CommandBufferService : public CommandBufferServiceBase {
   // to identify it in the command buffer.
   bool RegisterTransferBuffer(int32_t id,
                               std::unique_ptr<BufferBacking> buffer);
+  bool RegisterTransferBuffer(int32_t id,
+                              scoped_refptr<Buffer> buffer);
   scoped_refptr<Buffer> CreateTransferBufferWithId(size_t size, int32_t id);
 
  private:

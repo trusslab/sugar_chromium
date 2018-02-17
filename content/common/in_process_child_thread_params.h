@@ -27,6 +27,13 @@ class CONTENT_EXPORT InProcessChildThreadParams {
   scoped_refptr<base::SingleThreadTaskRunner> io_runner() const {
     return io_runner_;
   }
+  InProcessChildThreadParams(
+      bool webgl,
+      scoped_refptr<base::SingleThreadTaskRunner> io_runner,
+      const std::string& service_request_token);
+
+  bool webgl() const {return webgl_;}
+  const std::string& channel_name() const { return channel_name_; }
   const std::string& service_request_token() const {
     return service_request_token_;
   }
@@ -34,6 +41,8 @@ class CONTENT_EXPORT InProcessChildThreadParams {
  private:
   scoped_refptr<base::SingleThreadTaskRunner> io_runner_;
   std::string service_request_token_;
+  bool webgl_;
+  std::string channel_name_;
 };
 
 }  // namespace content

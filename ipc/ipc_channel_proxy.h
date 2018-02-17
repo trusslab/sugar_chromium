@@ -107,6 +107,11 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
       Listener* listener,
       const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner);
 
+  ChannelProxy(
+      bool webgl,
+	  Listener* listener,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner);
+
   ~ChannelProxy() override;
 
   // Initializes the channel proxy. Only call this once to initialize a channel
@@ -146,6 +151,8 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // Send a message asynchronously.  The message is routed to the background
   // thread where it is passed to the IPC::Channel's Send method.
   bool Send(Message* message) override;
+  
+  bool Send(Message* message, bool webgl);
 
   // Used to intercept messages as they are received on the background thread.
   //
@@ -233,12 +240,17 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // A subclass uses this constructor if it needs to add more information
   // to the internal state.
   explicit ChannelProxy(Context* context);
+  
+  explicit ChannelProxy(bool webgl, Context* context);
 
   // Used internally to hold state that is referenced on the IPC thread.
   class Context : public base::RefCountedThreadSafe<Context>,
                   public Listener {
    public:
     Context(Listener* listener,
+            const scoped_refptr<base::SingleThreadTaskRunner>& ipc_thread);
+    Context(bool webgl,
+	        Listener* listener,
             const scoped_refptr<base::SingleThreadTaskRunner>& ipc_thread);
     void ClearIPCTaskRunner();
     base::SingleThreadTaskRunner* ipc_task_runner() const {
@@ -249,6 +261,8 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
 
     // Sends |message| from appropriate thread.
     void Send(Message* message);
+
+	void Send(Message* message, bool webgl);
 
    protected:
     friend class base::RefCountedThreadSafe<Context>;
@@ -291,6 +305,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
 
     // Methods called on the IO thread.
     void OnSendMessage(std::unique_ptr<Message> message_ptr);
+	void OnSendMessage2(std::unique_ptr<Message> message_ptr, bool webgl);
     void OnAddFilter();
     void OnRemoveFilter(MessageFilter* filter);
 
@@ -313,6 +328,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
         const std::string& name,
         const GenericAssociatedInterfaceFactory& factory);
 
+	bool webgl_ = false;
     scoped_refptr<base::SingleThreadTaskRunner> listener_task_runner_;
     Listener* listener_;
 
@@ -392,6 +408,8 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
 
   // Whether the channel has been initialized.
   bool did_init_;
+  
+  bool webgl_ = false;
 
 #if defined(ENABLE_IPC_FUZZER)
   OutgoingMessageFilter* outgoing_message_filter_;

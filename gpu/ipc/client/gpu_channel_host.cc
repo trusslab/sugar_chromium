@@ -19,6 +19,9 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "url/gurl.h"
 
+#include "base/debug/stack_trace.h"
+#include "base/prints.h"
+
 using base::AutoLock;
 
 namespace gpu {
@@ -59,6 +62,20 @@ scoped_refptr<GpuChannelHost> GpuChannelHost::Create(
   return host;
 }
 
+scoped_refptr<GpuChannelHost> GpuChannelHost::CreateWebglChannel(
+    GpuChannelHostFactory* factory,
+    int channel_id,
+    const gpu::GPUInfo& gpu_info,
+    const IPC::ChannelHandle& channel_handle,
+    base::WaitableEvent* shutdown_event,
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager) {
+  DCHECK(factory->IsMainThread());
+  scoped_refptr<GpuChannelHost> host = new GpuChannelHost(
+      factory, channel_id, gpu_info, gpu_memory_buffer_manager, true);
+  host->Connect(channel_handle, shutdown_event);
+  return host;
+}
+
 GpuChannelHost::GpuChannelHost(
     GpuChannelHostFactory* factory,
     int channel_id,
@@ -68,6 +85,22 @@ GpuChannelHost::GpuChannelHost(
       channel_id_(channel_id),
       gpu_info_(gpu_info),
       gpu_memory_buffer_manager_(gpu_memory_buffer_manager) {
+  next_image_id_.GetNext();
+  next_route_id_.GetNext();
+  next_stream_id_.GetNext();
+}
+
+GpuChannelHost::GpuChannelHost(
+    GpuChannelHostFactory* factory,
+    int channel_id,
+    const gpu::GPUInfo& gpu_info,
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+    bool webgl)
+    : factory_(factory),
+      channel_id_(channel_id),
+      gpu_info_(gpu_info),
+      gpu_memory_buffer_manager_(gpu_memory_buffer_manager),
+      webgl_(webgl) {
   next_image_id_.GetNext();
   next_route_id_.GetNext();
   next_stream_id_.GetNext();
@@ -128,6 +161,26 @@ bool GpuChannelHost::Send(IPC::Message* msg) {
   return result;
 }
 
+bool GpuChannelHost::Send(IPC::Message* msg, bool webgl) {
+  std::unique_ptr<IPC::Message> message(msg);
+  message->set_unblock(false);
+
+  if (factory_->IsMainThread()) {
+    if (!channel_) {
+      DVLOG(1) << "GpuChannelHost::Send failed: Channel already destroyed";
+      return false;
+    }
+    base::ThreadRestrictions::ScopedAllowWait allow_wait;
+    bool result = channel_->Send(message.release(), webgl);
+    if (!result)
+      DVLOG(1) << "GpuChannelHost::Send failed: Channel::Send failed";
+    return result;
+  }
+
+  bool result = sync_filter_->Send(message.release());
+  return result;
+}
+
 uint32_t GpuChannelHost::OrderingBarrier(
     int32_t route_id,
     int32_t stream_id,
@@ -162,6 +215,41 @@ uint32_t GpuChannelHost::OrderingBarrier(
   return 0;
 }
 
+uint32_t GpuChannelHost::OrderingBarrier(
+    int32_t route_id,
+    int32_t stream_id,
+    int32_t put_offset,
+    uint32_t flush_count,
+    const std::vector<ui::LatencyInfo>& latency_info,
+    bool put_offset_changed,
+    bool do_flush,
+    uint32_t* highest_verified_flush_id,
+	bool webgl) {
+  AutoLock lock(context_lock_);
+  StreamFlushInfo& flush_info = stream_flush_info_[stream_id];
+  if (flush_info.flush_pending && flush_info.route_id != route_id)
+    InternalFlush(&flush_info, webgl);
+
+  *highest_verified_flush_id = flush_info.verified_stream_flush_id;
+
+  if (put_offset_changed) {
+    const uint32_t flush_id = flush_info.next_stream_flush_id++;
+    flush_info.flush_pending = true;
+    flush_info.route_id = route_id;
+    flush_info.put_offset = put_offset;
+    flush_info.flush_count = flush_count;
+    flush_info.flush_id = flush_id;
+    flush_info.latency_info.insert(flush_info.latency_info.end(),
+                                   latency_info.begin(), latency_info.end());
+
+    if (do_flush)
+      InternalFlush(&flush_info, webgl);
+
+    return flush_id;
+  }
+  return 0;
+}
+
 void GpuChannelHost::FlushPendingStream(int32_t stream_id) {
   AutoLock lock(context_lock_);
   auto flush_info_iter = stream_flush_info_.find(stream_id);
@@ -181,6 +269,23 @@ void GpuChannelHost::InternalFlush(StreamFlushInfo* flush_info) {
   Send(new GpuCommandBufferMsg_AsyncFlush(
       flush_info->route_id, flush_info->put_offset, flush_info->flush_count,
       flush_info->latency_info));
+  flush_info->latency_info.clear();
+  flush_info->flush_pending = false;
+
+  flush_info->flushed_stream_flush_id = flush_info->flush_id;
+}
+
+void GpuChannelHost::InternalFlush(StreamFlushInfo* flush_info, bool webgl) {
+  context_lock_.AssertAcquired();
+  DCHECK(flush_info);
+  DCHECK(flush_info->flush_pending);
+  DCHECK_LT(flush_info->flushed_stream_flush_id, flush_info->flush_id);
+  if(webgl){
+  } else {
+    Send(new GpuCommandBufferMsg_AsyncFlush(
+        flush_info->route_id, flush_info->put_offset, flush_info->flush_count,
+        flush_info->latency_info), webgl);
+  }
   flush_info->latency_info.clear();
   flush_info->flush_pending = false;
 

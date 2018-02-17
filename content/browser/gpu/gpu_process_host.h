@@ -22,6 +22,7 @@
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
+#include "content/gpu/in_process_gpu_thread.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/config/gpu_feature_info.h"
@@ -57,6 +58,13 @@ class InterfaceProvider;
 
 namespace content {
 class BrowserChildProcessHostImpl;
+class RenderGpuThreadHostImpl;
+class GpuMainThread;
+class InProcessChildThreadParams;
+class MojoApplicationHost;
+class RenderWidgetHostViewFrameSubscriber;
+class ShaderDiskCache;
+
 
 class GpuProcessHost : public BrowserChildProcessHostDelegate,
                        public IPC::Sender,
@@ -88,6 +96,12 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
                                             bool force_create = true);
 
   // Retrieves a list of process handles for all gpu processes.
+ CONTENT_EXPORT static GpuProcessHost* GetForRender(GpuProcessKind kind,
+                                            bool force_create, bool webgl); 
+  InProcessGpuThread* GetInProcessGPUThread() {
+    InProcessGpuThread* in_process_gpu_thread = static_cast<InProcessGpuThread* > (in_process_gpu_thread_.get()); 
+	return in_process_gpu_thread;
+  }
   static void GetProcessHandles(
       const GpuDataManager::GetGpuProcessHandlesCallback& callback);
 
@@ -109,6 +123,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   // IPC::Sender implementation.
   bool Send(IPC::Message* msg) override;
+  bool Send(IPC::Message* msg, bool webgl);
 
   // Adds a message filter to the GpuProcessHost's channel.
   void AddFilter(IPC::MessageFilter* filter);
@@ -160,10 +175,14 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   static bool ValidateHost(GpuProcessHost* host);
 
   GpuProcessHost(int host_id, GpuProcessKind kind);
+   GpuProcessHost(int host_id, GpuProcessKind kind, bool webgl);  
   ~GpuProcessHost() override;
 
   bool Init();
+ bool InitForWebgl();
 
+  bool SetupMojo();
+  bool SetupMojoForwebgl();
   // Post an IPC message to the UI shim's message handler on the UI thread.
   void RouteOnUIThread(const IPC::Message& message);
 
@@ -270,6 +289,8 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   std::unique_ptr<BrowserChildProcessHostImpl> process_;
 
+  std::unique_ptr<RenderGpuThreadHostImpl> processforwebgl_;
+  bool webgl_ = false;
   // Track the URLs of the pages which have live offscreen contexts,
   // assumed to be associated with untrusted content such as WebGL.
   // For best robustness, when any context lost notification is

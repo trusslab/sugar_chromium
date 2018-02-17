@@ -84,7 +84,7 @@ bool Connector::WaitForIncomingMessage(MojoDeadline deadline) {
   if (rv != MOJO_RESULT_OK) {
     // Users that call WaitForIncomingMessage() should expect their code to be
     // re-entered, so we call the error handler synchronously.
-    HandleError(rv != MOJO_RESULT_FAILED_PRECONDITION, false);
+	HandleError(rv != MOJO_RESULT_FAILED_PRECONDITION, false);
     return false;
   }
   ignore_result(ReadSingleMessage(&rv));
@@ -117,8 +117,9 @@ bool Connector::Accept(Message* message) {
   // It shouldn't hurt even if |error_| may be changed by a different thread at
   // the same time. The outcome is that we may write into |message_pipe_| after
   // encountering an error, which should be fine.
-  if (error_)
-    return false;
+  if (error_) {
+	return false;
+  }
 
   internal::MayAutoLock locker(&lock_);
 
@@ -208,7 +209,7 @@ void Connector::OnHandleReadyInternal(MojoResult result) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   if (result != MOJO_RESULT_OK) {
-    HandleError(result != MOJO_RESULT_FAILED_PRECONDITION, false);
+	HandleError(result != MOJO_RESULT_FAILED_PRECONDITION, false);
     return;
   }
   ReadAllAvailableMessages();

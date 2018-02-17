@@ -9,6 +9,8 @@
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/offscreencanvas/OffscreenCanvas.h"
 
+#include "base/prints.h"
+
 namespace blink {
 
 void HTMLCanvasElementModule::getContext(

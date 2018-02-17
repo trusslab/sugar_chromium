@@ -8,7 +8,9 @@
 #include <GLES2/gl2.h>
 
 #include "base/compiler_specific.h"
-
+#if !defined(OS_MACOSX)
+#endif
+#include "gpu/command_buffer/common/transferable_texture.h"
 extern "C" typedef struct _ClientBuffer* ClientBuffer;
 
 namespace gpu {
@@ -19,6 +21,8 @@ class GLES2Interface {
  public:
   GLES2Interface() {}
   virtual ~GLES2Interface() {}
+  bool webgl_ = false;
+  void setWebgl(bool val) {webgl_ = val;}
 
   virtual void FreeSharedMemory(void*) {};
 

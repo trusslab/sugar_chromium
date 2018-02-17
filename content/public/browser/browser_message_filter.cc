@@ -85,8 +85,6 @@ class BrowserMessageFilter::Internal : public IPC::MessageFilter {
   // Dispatches a message to the derived class.
   bool DispatchMessage(const IPC::Message& message) {
     bool rv = filter_->OnMessageReceived(message);
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO) || rv) <<
-        "Must handle messages that were dispatched to another thread!";
     return rv;
   }
 

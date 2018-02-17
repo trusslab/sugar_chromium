@@ -58,6 +58,8 @@ source_set("ipc_client_sources") {
     "//ui/gfx/ipc/geometry",
     "//ui/gl",
     "//url/ipc:url_ipc",
+    "//gpu/itc/client",
+    "//gpu/itc/service",
   ]
   if (use_ozone) {
     deps += [ "//ui/ozone" ]

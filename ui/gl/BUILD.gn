@@ -184,6 +184,8 @@ component("gl") {
       "gl_surface_glx_x11.h",
       "gl_surface_osmesa_x11.cc",
       "gl_surface_osmesa_x11.h",
+      "gl_surface_egl_gbm.cc",
+      "gl_surface_egl_gbm.h",
     ]
 
     deps += [ "//ui/base/x" ]

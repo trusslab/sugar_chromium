@@ -54,8 +54,25 @@ class MojoChannelFactory : public ChannelFactory {
         mode_(mode),
         ipc_task_runner_(ipc_task_runner) {}
 
+  MojoChannelFactory(
+      bool webgl,
+      mojo::ScopedMessagePipeHandle handle,
+      Channel::Mode mode,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner)
+      : webgl_(webgl),
+	    handle_(std::move(handle)),
+        mode_(mode),
+        ipc_task_runner_(ipc_task_runner) {}
+
   std::unique_ptr<Channel> BuildChannel(Listener* listener) override {
-    return ChannelMojo::Create(
+	if (webgl_) {
+	  return ChannelMojo::CreateForWebgl(
+          std::move(handle_), mode_, listener, ipc_task_runner_);
+	} else {
+	  return ChannelMojo::Create(
+          std::move(handle_), mode_, listener, ipc_task_runner_);
+    }
+	return ChannelMojo::Create(
         std::move(handle_), mode_, listener, ipc_task_runner_);
   }
 
@@ -64,6 +81,7 @@ class MojoChannelFactory : public ChannelFactory {
   }
 
  private:
+  bool webgl_ = false;
   mojo::ScopedMessagePipeHandle handle_;
   const Channel::Mode mode_;
   scoped_refptr<base::SingleThreadTaskRunner> ipc_task_runner_;
@@ -253,6 +271,15 @@ std::unique_ptr<ChannelMojo> ChannelMojo::Create(
       new ChannelMojo(std::move(handle), mode, listener, ipc_task_runner));
 }
 
+std::unique_ptr<ChannelMojo> ChannelMojo::CreateForWebgl(
+    mojo::ScopedMessagePipeHandle handle,
+    Mode mode,
+    Listener* listener,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner) {
+  return base::WrapUnique(
+      new ChannelMojo(true, std::move(handle), mode, listener, ipc_task_runner));
+}
+
 // static
 std::unique_ptr<ChannelFactory> ChannelMojo::CreateServerFactory(
     mojo::ScopedMessagePipeHandle handle,
@@ -269,6 +296,14 @@ std::unique_ptr<ChannelFactory> ChannelMojo::CreateClientFactory(
       std::move(handle), Channel::MODE_CLIENT, ipc_task_runner);
 }
 
+std::unique_ptr<ChannelFactory> ChannelMojo::CreateClientFactory(
+    bool webgl,
+	mojo::ScopedMessagePipeHandle handle,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner) {
+  return base::MakeUnique<MojoChannelFactory>(
+      webgl, std::move(handle), Channel::MODE_CLIENT, ipc_task_runner);
+}
+
 ChannelMojo::ChannelMojo(
     mojo::ScopedMessagePipeHandle handle,
     Mode mode,
@@ -279,6 +314,24 @@ ChannelMojo::ChannelMojo(
       listener_(listener),
       weak_factory_(this) {
   bootstrap_ = MojoBootstrap::Create(std::move(handle), mode, ipc_task_runner);
+}
+
+ChannelMojo::ChannelMojo(
+    bool webgl,
+	mojo::ScopedMessagePipeHandle handle,
+    Mode mode,
+    Listener* listener,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner)
+	: webgl_(webgl),
+      task_runner_(ipc_task_runner),
+      pipe_(handle.get()),
+      listener_(listener),
+      weak_factory_(this) {
+  if (webgl_){
+    bootstrap_ = MojoBootstrap::CreateForWebgl(std::move(handle), mode, ipc_task_runner);
+  } else {
+    bootstrap_ = MojoBootstrap::Create(std::move(handle), mode, ipc_task_runner);
+  }
 }
 
 void ChannelMojo::ForwardMessageFromThreadSafePtr(mojo::Message message) {
@@ -305,6 +358,9 @@ ChannelMojo::~ChannelMojo() {
 }
 
 bool ChannelMojo::Connect() {
+  if (webgl_) {
+  }
+  
   DCHECK(task_runner_->RunsTasksOnCurrentThread());
 
   WillConnect();

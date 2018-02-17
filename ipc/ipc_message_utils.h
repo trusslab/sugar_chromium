@@ -212,6 +212,19 @@ struct ParamTraits<unsigned int> {
 #if defined(OS_WIN) || defined(OS_LINUX) || \
     (defined(OS_ANDROID) && defined(ARCH_CPU_64_BITS))
 template <>
+struct ParamTraits<void*> {
+  typedef void* param_type;
+  static void Write(Message* m, const param_type& p) {
+    m->WriteEglImageKHR(p);
+  }
+  static bool Read(const Message* m,
+                   base::PickleIterator* iter,
+                   param_type* r) {
+    return iter->ReadEglImageKHR(reinterpret_cast<void**>(r));
+  }
+  IPC_EXPORT static void Log(const param_type& p, std::string* l);
+};
+template <>
 struct ParamTraits<long> {
   typedef long param_type;
   static void GetSize(base::PickleSizer* sizer, const param_type& p) {

@@ -27,7 +27,7 @@ namespace gles2 {
 // TODO(backer): Investigate using glReleaseShaderCompiler as an alternative to
 // to this cache.
 class GPU_EXPORT ShaderTranslatorCache
-    : public base::RefCounted<ShaderTranslatorCache>,
+    : public base::RefCountedThreadSafe<ShaderTranslatorCache>,
       public NON_EXPORTED_BASE(ShaderTranslator::DestructionObserver) {
  public:
   explicit ShaderTranslatorCache(const GpuPreferences& gpu_preferences);
@@ -43,7 +43,7 @@ class GPU_EXPORT ShaderTranslatorCache
       ShCompileOptions driver_bug_workarounds);
 
  private:
-  friend class base::RefCounted<ShaderTranslatorCache>;
+  friend class base::RefCountedThreadSafe<ShaderTranslatorCache>;
   friend class ShaderTranslatorCacheTest_InitParamComparable_Test;
   ~ShaderTranslatorCache() override;
 

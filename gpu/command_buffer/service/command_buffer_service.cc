@@ -17,6 +17,8 @@
 #include "gpu/command_buffer/common/command_buffer_shared.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
 
+#include "base/prints.h"
+
 using ::base::SharedMemory;
 
 namespace gpu {
@@ -132,6 +134,13 @@ void CommandBufferService::SetSharedStateBuffer(
   UpdateState();
 }
 
+void CommandBufferService::SetSharedStateBuffer(
+    CommandBufferSharedState* shared_state) {
+  shared_state_ = shared_state;
+
+  UpdateState();
+}
+
 void CommandBufferService::SetGetOffset(int32_t get_offset) {
   DCHECK(get_offset >= 0 && get_offset < num_entries_);
   get_offset_ = get_offset;
@@ -153,6 +162,7 @@ scoped_refptr<Buffer> CommandBufferService::CreateTransferBuffer(size_t size,
   return result;
 }
 
+
 void CommandBufferService::DestroyTransferBuffer(int32_t id) {
   transfer_buffer_manager_->DestroyTransferBuffer(id);
   if (id == ring_buffer_id_) {
@@ -173,6 +183,13 @@ bool CommandBufferService::RegisterTransferBuffer(
     std::unique_ptr<BufferBacking> buffer) {
   return transfer_buffer_manager_->RegisterTransferBuffer(id,
                                                           std::move(buffer));
+}
+
+bool CommandBufferService::RegisterTransferBuffer(
+    int32_t id,
+    scoped_refptr<Buffer> buffer) {
+  return transfer_buffer_manager_->RegisterTransferBuffer(id,
+                                                          buffer);
 }
 
 scoped_refptr<Buffer> CommandBufferService::CreateTransferBufferWithId(

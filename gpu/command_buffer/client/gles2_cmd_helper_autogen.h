@@ -10,7 +10,6 @@
 
 #ifndef GPU_COMMAND_BUFFER_CLIENT_GLES2_CMD_HELPER_AUTOGEN_H_
 #define GPU_COMMAND_BUFFER_CLIENT_GLES2_CMD_HELPER_AUTOGEN_H_
-
 void ActiveTexture(GLenum texture) {
   gles2::cmds::ActiveTexture* c = GetCmdSpace<gles2::cmds::ActiveTexture>();
   if (c) {
@@ -741,7 +740,7 @@ void GenSamplersImmediate(GLsizei n, GLuint* samplers) {
 }
 
 void GenTexturesImmediate(GLsizei n, GLuint* textures) {
-  const uint32_t size = gles2::cmds::GenTexturesImmediate::ComputeSize(n);
+   const uint32_t size = gles2::cmds::GenTexturesImmediate::ComputeSize(n);
   gles2::cmds::GenTexturesImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::GenTexturesImmediate>(size);
   if (c) {

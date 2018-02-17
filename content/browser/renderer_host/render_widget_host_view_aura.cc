@@ -119,7 +119,6 @@
 #include "ui/base/ime/linux/text_edit_command_auralinux.h"
 #include "ui/base/ime/linux/text_edit_key_bindings_delegate_auralinux.h"
 #endif
-
 using gfx::RectToSkIRect;
 using gfx::SkIRectToRect;
 
@@ -944,6 +943,7 @@ void RenderWidgetHostViewAura::OnSwapCompositorFrame(
   }
   selection_controller_->OnSelectionBoundsChanged(selection.start,
                                                   selection.end);
+
 }
 
 void RenderWidgetHostViewAura::ClearCompositorFrame() {

@@ -37,6 +37,8 @@
 using base::trace_event::MemoryAllocatorDump;
 using base::trace_event::MemoryDumpLevelOfDetail;
 
+#include "base/debug/stack_trace.h"
+#include "base/prints.h"
 namespace gpu {
 namespace gles2 {
 
@@ -1897,7 +1899,7 @@ TextureManager::TextureManager(MemoryTracker* memory_tracker,
       texture_count_(0),
       have_context_(true),
       current_service_id_generation_(0),
-      progress_reporter_(progress_reporter) {
+      progress_reporter_(NULL) {
   for (int ii = 0; ii < kNumDefaultTextures; ++ii) {
     black_texture_ids_[ii] = 0;
   }
@@ -2035,6 +2037,11 @@ void TextureManager::SetTarget(TextureRef* ref, GLenum target) {
   ref->texture()->SetTarget(target, MaxLevelsForTarget(target));
 }
 
+Texture::CanRenderCondition Texture::GetCanRenderConditionWebgl() const {
+    return CAN_RENDER_ALWAYS;
+
+
+}
 void TextureManager::SetLevelClearedRect(TextureRef* ref,
                                          GLenum target,
                                          GLint level,
@@ -3658,6 +3665,29 @@ uint32_t TextureManager::GetServiceIdGeneration() const {
 
 void TextureManager::IncrementServiceIdGeneration() {
   current_service_id_generation_++;
+}
+
+
+void Texture::SetParamsToTransferableTexture(gpu::TransferableTexture* transferable_texture) {
+  transferable_texture->has_images_ = has_images_;
+  transferable_texture->estimated_size_ = estimated_size_;
+  
+transferable_texture->face_infos_.resize(face_infos_.size()); 
+for(size_t i = 0; i<face_infos_.size(); i++) {
+    transferable_texture->face_infos_[i].num_mip_levels = face_infos_[i].num_mip_levels;
+    transferable_texture->face_infos_[i].level_infos.resize(face_infos_[i].level_infos.size());
+    for(size_t j=0; j<face_infos_[i].level_infos.size(); j++){
+	transferable_texture->face_infos_[i].level_infos[j].level = face_infos_[i].level_infos[j].level;
+	transferable_texture->face_infos_[i].level_infos[j].internal_format = face_infos_[i].level_infos[j].internal_format;
+	transferable_texture->face_infos_[i].level_infos[j].width = face_infos_[i].level_infos[j].width;
+	transferable_texture->face_infos_[i].level_infos[j].height = face_infos_[i].level_infos[j].height;
+	transferable_texture->face_infos_[i].level_infos[j].depth = face_infos_[i].level_infos[j].depth;
+	transferable_texture->face_infos_[i].level_infos[j].border = face_infos_[i].level_infos[j].border;
+	transferable_texture->face_infos_[i].level_infos[j].format = face_infos_[i].level_infos[j].format;
+	transferable_texture->face_infos_[i].level_infos[j].type = face_infos_[i].level_infos[j].type;
+	transferable_texture->face_infos_[i].level_infos[j].estimated_size = face_infos_[i].level_infos[j].estimated_size;
+}
+}
 }
 
 }  // namespace gles2

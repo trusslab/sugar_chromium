@@ -17,11 +17,13 @@
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_surface_egl.h"
 #include "ui/gl/gl_surface_egl_x11.h"
+#include "ui/gl/gl_surface_egl_gbm.h"
 #include "ui/gl/gl_surface_glx.h"
 #include "ui/gl/gl_surface_glx_x11.h"
 #include "ui/gl/gl_surface_osmesa.h"
 #include "ui/gl/gl_surface_osmesa_x11.h"
 #include "ui/gl/gl_surface_stub.h"
+#include "base/prints.h"
 
 namespace gl {
 namespace init {
@@ -41,6 +43,8 @@ bool GetGLWindowSystemBindingInfo(GLWindowSystemBindingInfo* info) {
       return GetGLWindowSystemBindingInfoGLX(info);
     case kGLImplementationEGLGLES2:
       return GetGLWindowSystemBindingInfoEGL(info);
+    case kGLImplementationEGLGLES2Sugar:
+      return GetGLWindowSystemBindingInfoEGL(info);
     default:
       return false;
   }
@@ -59,6 +63,9 @@ scoped_refptr<GLContext> CreateGLContext(GLShareGroup* share_group,
                                  compatible_surface, attribs);
     case kGLImplementationSwiftShaderGL:
     case kGLImplementationEGLGLES2:
+      return InitializeGLContext(new GLContextEGL(share_group),
+                                 compatible_surface, attribs);
+    case kGLImplementationEGLGLES2Sugar:
       return InitializeGLContext(new GLContextEGL(share_group),
                                  compatible_surface, attribs);
     case kGLImplementationMockGL:
@@ -86,6 +93,8 @@ scoped_refptr<GLSurface> CreateViewGLSurface(gfx::AcceleratedWidget window) {
     case kGLImplementationEGLGLES2:
       DCHECK(window != gfx::kNullAcceleratedWidget);
       return InitializeGLSurface(new NativeViewGLSurfaceEGLX11(window));
+    case kGLImplementationEGLGLES2Sugar:
+      return nullptr;
     case kGLImplementationMockGL:
     case kGLImplementationStubGL:
       return new GLSurfaceStub;
@@ -110,6 +119,8 @@ scoped_refptr<GLSurface> CreateOffscreenGLSurfaceWithFormat(
     case kGLImplementationEGLGLES2:
       return InitializeGLSurfaceWithFormat(
           new PbufferGLSurfaceEGL(size), format);
+    case kGLImplementationEGLGLES2Sugar:
+      return InitializeGLSurface(new NativeViewGLSurfaceEGLGBM());
     case kGLImplementationMockGL:
     case kGLImplementationStubGL:
       return new GLSurfaceStub;

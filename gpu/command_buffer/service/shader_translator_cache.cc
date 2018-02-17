@@ -8,6 +8,8 @@
 
 #include "gpu/command_buffer/service/gpu_preferences.h"
 
+#include "base/prints.h"
+
 namespace gpu {
 namespace gles2 {
 

@@ -54,6 +54,13 @@ class IPC_EXPORT ChannelMojo
          const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner =
             base::ThreadTaskRunnerHandle::Get());
 
+  static std::unique_ptr<ChannelMojo>
+  CreateForWebgl(mojo::ScopedMessagePipeHandle handle,
+         Mode mode,
+         Listener* listener,
+         const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner =
+            base::ThreadTaskRunnerHandle::Get());
+
   // Create a factory object for ChannelMojo.
   // The factory is used to create Mojo-based ChannelProxy family.
   // |host| must not be null.
@@ -63,6 +70,11 @@ class IPC_EXPORT ChannelMojo
 
   static std::unique_ptr<ChannelFactory> CreateClientFactory(
       mojo::ScopedMessagePipeHandle handle,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner);
+
+  static std::unique_ptr<ChannelFactory> CreateClientFactory(
+      bool webgl,
+	  mojo::ScopedMessagePipeHandle handle,
       const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner);
 
   ~ChannelMojo() override;
@@ -100,6 +112,13 @@ class IPC_EXPORT ChannelMojo
       Listener* listener,
       const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner);
 
+  ChannelMojo(
+      bool webgl,
+	  mojo::ScopedMessagePipeHandle handle,
+      Mode mode,
+      Listener* listener,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner);
+
   void ForwardMessageFromThreadSafePtr(mojo::Message message);
   void ForwardMessageWithResponderFromThreadSafePtr(
       mojo::Message message,
@@ -115,6 +134,8 @@ class IPC_EXPORT ChannelMojo
       const std::string& name,
       mojo::ScopedInterfaceEndpointHandle handle) override;
 
+  bool webgl_ = false;
+  
   // A TaskRunner which runs tasks on the ChannelMojo's owning thread.
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 

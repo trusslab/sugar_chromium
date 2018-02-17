@@ -84,12 +84,22 @@
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_version_info.h"
 #include "ui/gl/gpu_timing.h"
-
+#include "ui/gl/gl_surface_egl_gbm.h"
+#include "base/debug/stack_trace.h"
 #if defined(OS_MACOSX)
 #include <IOSurface/IOSurface.h>
+
 // Note that this must be included after gl_bindings.h to avoid conflicts.
 #include <OpenGL/CGLIOSurface.h>
 #endif
+
+#include "vmdisp.h"
+#include "ui/gfx/x/x11_types.h"
+#include "ui/gl/gl_surface_egl.h"
+#include "ui/gl/init/gl_factory.h"
+#include "ui/gl/gl_implementation.h"
+
+#include "base/prints.h"
 
 namespace gpu {
 namespace gles2 {
@@ -499,6 +509,8 @@ error::Error GLES2Decoder::DoCommand(unsigned int command,
 class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
  public:
   explicit GLES2DecoderImpl(ContextGroup* group);
+  explicit GLES2DecoderImpl(ContextGroup* group, bool webgl);
+  explicit GLES2DecoderImpl(bool render_compositor, ContextGroup* group, int32_t renderer_pid);
   ~GLES2DecoderImpl() override;
 
   error::Error DoCommands(unsigned int num_commands,
@@ -595,6 +607,14 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
   void SetFenceSyncReleaseCallback(
       const FenceSyncReleaseCallback& callback) override;
   void SetWaitFenceSyncCallback(const WaitFenceSyncCallback& callback) override;
+  void SetCreateTextureSyncCallback(
+      const CreateTextureSyncCallback& callback) override;
+
+  void SetRemoveTextureSyncCallback(
+      const RemoveTextureSyncCallback& callback) override;
+  
+  void SetProduceTextureDirectSyncCallback(
+      const ProduceTextureDirectSyncCallback& callback) override;
 
   void SetDescheduleUntilFinishedCallback(
       const NoParamCallback& callback) override;
@@ -782,6 +802,10 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
   // Creates a Texture for the given texture.
   TextureRef* CreateTexture(
       GLuint client_id, GLuint service_id) {
+	if (webgl_) {
+	  DCHECK(create_texture_sync_callback_);
+	  create_texture_sync_callback_.Run(client_id, service_id);
+	}
     return texture_manager()->CreateTexture(client_id, service_id);
   }
 
@@ -792,6 +816,10 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
 
   // Deletes the texture info for the given texture.
   void RemoveTexture(GLuint client_id) {
+	if (webgl_) {
+      DCHECK(remove_texture_sync_callback_);
+	  remove_texture_sync_callback_.Run(client_id);
+	}
     texture_manager()->RemoveTexture(client_id);
   }
 
@@ -1017,12 +1045,20 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
                          TextureRef* texture_ref,
                          GLenum target,
                          const volatile GLbyte* data);
+  void ProduceTextureRefSync(const char* func_name,
+                             bool clear,
+                             TextureRef* texture_ref,
+                             GLenum target,
+                             Mailbox mailbox) override;
 
   void EnsureTextureForClientId(GLenum target, GLuint client_id);
   void DoConsumeTextureCHROMIUM(GLenum target, const volatile GLbyte* key);
   void DoCreateAndConsumeTextureINTERNAL(GLenum target,
                                          GLuint client_id,
                                          const volatile GLbyte* key);
+ void DoCreateAndConsumeTextureCHROMIUM(gpu::TransferableTexture transferable_texture, EGLImageKHR eglimage, GLenum target, const GLbyte* key,
+    GLuint client_id);
+
   void DoApplyScreenSpaceAntialiasingCHROMIUM();
 
   void DoBindTexImage2DCHROMIUM(
@@ -2195,7 +2231,9 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
   // The GL context this decoder renders to on behalf of the client.
   scoped_refptr<gl::GLSurface> surface_;
   scoped_refptr<gl::GLContext> context_;
-
+  
+  std::unique_ptr<gl_vmdisp> vmdisp_;
+  
   // The ContextGroup for this decoder uses to track resources.
   scoped_refptr<ContextGroup> group_;
 
@@ -2300,6 +2338,9 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
 
   FenceSyncReleaseCallback fence_sync_release_callback_;
   WaitFenceSyncCallback wait_fence_sync_callback_;
+  CreateTextureSyncCallback create_texture_sync_callback_;
+  RemoveTextureSyncCallback remove_texture_sync_callback_;
+  ProduceTextureDirectSyncCallback produce_texture_direct_sync_callback_;
   NoParamCallback deschedule_until_finished_callback_;
   NoParamCallback reschedule_after_finished_callback_;
 
@@ -2433,6 +2474,10 @@ class GLES2DecoderImpl : public GLES2Decoder, public ErrorStateClient {
   uint32_t texture_manager_service_id_generation_;
 
   bool force_shader_name_hashing_for_test;
+
+  bool webgl_ = false;
+  bool render_compositor_ = false;
+  int32_t renderer_pid_ = 0;
 
   GLfloat line_width_range_[2];
 
@@ -3009,6 +3054,20 @@ GLES2Decoder* GLES2Decoder::Create(ContextGroup* group) {
   return new GLES2DecoderImpl(group);
 }
 
+GLES2Decoder* GLES2Decoder::Create(ContextGroup* group, bool webgl) {
+  if (group->gpu_preferences().use_passthrough_cmd_decoder) {
+    return new GLES2DecoderPassthroughImpl(group);
+  }
+  return new GLES2DecoderImpl(group, webgl);
+}
+
+GLES2Decoder* GLES2Decoder::CreateForRenderCompositor(ContextGroup* group, int32_t renderer_pid) {
+  if (group->gpu_preferences().use_passthrough_cmd_decoder) {
+    return new GLES2DecoderPassthroughImpl(group);
+  }
+  return new GLES2DecoderImpl(true, group, renderer_pid);
+}
+
 GLES2DecoderImpl::GLES2DecoderImpl(ContextGroup* group)
     : GLES2Decoder(),
       group_(group),
@@ -3069,6 +3128,142 @@ GLES2DecoderImpl::GLES2DecoderImpl(ContextGroup* group)
       texture_manager_service_id_generation_(0),
       force_shader_name_hashing_for_test(false) {
   DCHECK(group);
+}
+
+GLES2DecoderImpl::GLES2DecoderImpl(ContextGroup* group, bool webgl)
+    : GLES2Decoder(),
+      group_(group),
+      logger_(&debug_marker_manager_),
+      state_(group_->feature_info(), this, &logger_),
+      attrib_0_buffer_id_(0),
+      attrib_0_buffer_matches_value_(true),
+      attrib_0_size_(0),
+      fixed_attrib_buffer_id_(0),
+      fixed_attrib_buffer_size_(0),
+      offscreen_target_color_format_(0),
+      offscreen_target_depth_format_(0),
+      offscreen_target_stencil_format_(0),
+      offscreen_target_samples_(0),
+      offscreen_target_buffer_preserved_(true),
+      offscreen_saved_color_format_(0),
+      offscreen_buffer_should_have_alpha_(false),
+      back_buffer_color_format_(0),
+      back_buffer_has_depth_(false),
+      back_buffer_has_stencil_(false),
+      back_buffer_read_buffer_(GL_BACK),
+      back_buffer_draw_buffer_(GL_BACK),
+      surfaceless_(false),
+      backbuffer_needs_clear_bits_(0),
+      swaps_since_resize_(0),
+      current_decoder_error_(error::kNoError),
+      validators_(group_->feature_info()->validators()),
+      feature_info_(group_->feature_info()),
+      frame_number_(0),
+      has_robustness_extension_(false),
+      context_lost_reason_(error::kUnknown),
+      context_was_lost_(false),
+      reset_by_robustness_extension_(false),
+      supports_post_sub_buffer_(false),
+      supports_swap_buffers_with_bounds_(false),
+      supports_commit_overlay_planes_(false),
+      supports_async_swap_(false),
+      derivatives_explicitly_enabled_(false),
+      frag_depth_explicitly_enabled_(false),
+      draw_buffers_explicitly_enabled_(false),
+      shader_texture_lod_explicitly_enabled_(false),
+      compile_shader_always_succeeds_(false),
+      lose_context_when_out_of_memory_(false),
+      should_use_native_gmb_for_backbuffer_(false),
+      service_logging_(
+          group_->gpu_preferences().enable_gpu_service_logging_gpu),
+      viewport_max_width_(0),
+      viewport_max_height_(0),
+      num_stencil_bits_(0),
+      texture_state_(group_->feature_info()->workarounds()),
+      gpu_decoder_category_(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
+          TRACE_DISABLED_BY_DEFAULT("gpu_decoder"))),
+      gpu_trace_level_(2),
+      gpu_trace_commands_(false),
+      gpu_debug_commands_(false),
+      validation_fbo_multisample_(0),
+      validation_fbo_(0),
+      texture_manager_service_id_generation_(0),
+      force_shader_name_hashing_for_test(false),
+	  webgl_(webgl) {
+  DCHECK(group);
+}
+
+GLES2DecoderImpl::GLES2DecoderImpl(bool render_compositor, ContextGroup* group, int32_t renderer_pid)
+    : GLES2Decoder(),
+      group_(group),
+      logger_(&debug_marker_manager_),
+      state_(group_->feature_info(), this, &logger_),
+      attrib_0_buffer_id_(0),
+      attrib_0_buffer_matches_value_(true),
+      attrib_0_size_(0),
+      fixed_attrib_buffer_id_(0),
+      fixed_attrib_buffer_size_(0),
+      offscreen_target_color_format_(0),
+      offscreen_target_depth_format_(0),
+      offscreen_target_stencil_format_(0),
+      offscreen_target_samples_(0),
+      offscreen_target_buffer_preserved_(true),
+      offscreen_saved_color_format_(0),
+      offscreen_buffer_should_have_alpha_(false),
+      back_buffer_color_format_(0),
+      back_buffer_has_depth_(false),
+      back_buffer_has_stencil_(false),
+      back_buffer_read_buffer_(GL_BACK),
+      back_buffer_draw_buffer_(GL_BACK),
+      surfaceless_(false),
+      backbuffer_needs_clear_bits_(0),
+      swaps_since_resize_(0),
+      current_decoder_error_(error::kNoError),
+      validators_(group_->feature_info()->validators()),
+      feature_info_(group_->feature_info()),
+      frame_number_(0),
+      has_robustness_extension_(false),
+      context_lost_reason_(error::kUnknown),
+      context_was_lost_(false),
+      reset_by_robustness_extension_(false),
+      supports_post_sub_buffer_(false),
+      supports_swap_buffers_with_bounds_(false),
+      supports_commit_overlay_planes_(false),
+      supports_async_swap_(false),
+      derivatives_explicitly_enabled_(false),
+      frag_depth_explicitly_enabled_(false),
+      draw_buffers_explicitly_enabled_(false),
+      shader_texture_lod_explicitly_enabled_(false),
+      compile_shader_always_succeeds_(false),
+      lose_context_when_out_of_memory_(false),
+      should_use_native_gmb_for_backbuffer_(false),
+      service_logging_(
+          group_->gpu_preferences().enable_gpu_service_logging_gpu),
+      viewport_max_width_(0),
+      viewport_max_height_(0),
+      num_stencil_bits_(0),
+      texture_state_(group_->feature_info()->workarounds()),
+      gpu_decoder_category_(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
+          TRACE_DISABLED_BY_DEFAULT("gpu_decoder"))),
+      gpu_trace_level_(2),
+      gpu_trace_commands_(false),
+      gpu_debug_commands_(false),
+      validation_fbo_multisample_(0),
+      validation_fbo_(0),
+      texture_manager_service_id_generation_(0),
+      force_shader_name_hashing_for_test(false),
+	  render_compositor_(render_compositor),
+	  renderer_pid_(renderer_pid) {
+  DCHECK(group);
+  if (render_compositor_) {
+    DCHECK_NE(renderer_pid_, 0);
+
+    vmdisp_.reset(new gl_vmdisp(renderer_pid_));
+    DCHECK(vmdisp_);
+    vmdisp_->set_vmdisp_egl_context(context_);
+
+        vmdisp_->initialize_vmdisp();	
+  }
 }
 
 GLES2DecoderImpl::~GLES2DecoderImpl() {
@@ -4657,6 +4852,21 @@ void GLES2DecoderImpl::SetWaitFenceSyncCallback(
   wait_fence_sync_callback_ = callback;
 }
 
+void GLES2DecoderImpl::SetCreateTextureSyncCallback(
+    const CreateTextureSyncCallback& callback) {
+  create_texture_sync_callback_ = callback;
+}
+
+void GLES2DecoderImpl::SetRemoveTextureSyncCallback(
+    const RemoveTextureSyncCallback& callback) {
+  remove_texture_sync_callback_ = callback;
+}
+
+void GLES2DecoderImpl::SetProduceTextureDirectSyncCallback(
+    const ProduceTextureDirectSyncCallback& callback) {
+  produce_texture_direct_sync_callback_ = callback;
+}
+
 void GLES2DecoderImpl::SetDescheduleUntilFinishedCallback(
     const NoParamCallback& callback) {
   deschedule_until_finished_callback_ = callback;
@@ -4879,6 +5089,7 @@ void GLES2DecoderImpl::Destroy(bool have_context) {
     context_->ReleaseCurrent(NULL);
     context_ = NULL;
   }
+
 }
 
 void GLES2DecoderImpl::SetSurface(const scoped_refptr<gl::GLSurface>& surface) {
@@ -5297,9 +5508,12 @@ void GLES2DecoderImpl::DoFinish() {
   ProcessPendingQueries(true);
 }
 
+
 void GLES2DecoderImpl::DoFlush() {
   glFlush();
   ProcessPendingQueries(false);
+  if (webgl_) {
+  }
 }
 
 void GLES2DecoderImpl::DoActiveTexture(GLenum texture_unit) {
@@ -9562,6 +9776,7 @@ void GLES2DecoderImpl::DoCopyBufferSubData(GLenum readtarget,
 
 bool GLES2DecoderImpl::PrepareTexturesForRender() {
   DCHECK(state_.current_program.get());
+
   bool textures_set = false;
   const Program::SamplerIndices& sampler_indices =
      state_.current_program->sampler_indices();
@@ -9591,7 +9806,7 @@ bool GLES2DecoderImpl::PrepareTexturesForRender() {
                 std::string("there is no texture bound to the unit ") +
                 base::UintToString(texture_unit_index));
           } else {
-            LOCAL_RENDER_WARNING(
+		LOCAL_RENDER_WARNING(
                 std::string("texture bound to texture unit ") +
                 base::UintToString(texture_unit_index) +
                 " is not renderable. It maybe non-power-of-2 and have"
@@ -15471,6 +15686,7 @@ error::Error GLES2DecoderImpl::HandleRequestExtensionCHROMIUM(
     frag_depth_explicitly_enabled_ |= desire_frag_depth;
     draw_buffers_explicitly_enabled_ |= desire_draw_buffers;
     shader_texture_lod_explicitly_enabled_ |= desire_shader_texture_lod;
+	return error::kNoError;
     InitializeShaderTranslator();
   }
 
@@ -17221,6 +17437,9 @@ void GLES2DecoderImpl::DoProduceTextureDirectCHROMIUM(
 
   ProduceTextureRef("glProduceTextureDirectCHROMIUM", !client_id,
                     GetTexture(client_id), target, data);
+  if (webgl_) {
+    gl::NativeViewGLSurfaceEGLGBM::flipBuffer(GetTexture(client_id)->service_id());
+  }
 }
 
 void GLES2DecoderImpl::ProduceTextureRef(const char* func_name,
@@ -17228,6 +17447,10 @@ void GLES2DecoderImpl::ProduceTextureRef(const char* func_name,
                                          TextureRef* texture_ref,
                                          GLenum target,
                                          const volatile GLbyte* data) {
+  if (webgl_) {
+    DCHECK(produce_texture_direct_sync_callback_);
+    produce_texture_direct_sync_callback_.Run(texture_ref->client_id(), target, data);
+  }
   Mailbox mailbox =
       Mailbox::FromVolatile(*reinterpret_cast<const volatile Mailbox*>(data));
   DLOG_IF(ERROR, !mailbox.Verify()) << func_name << " was passed a "
@@ -17262,6 +17485,44 @@ void GLES2DecoderImpl::ProduceTextureRef(const char* func_name,
 
   group_->mailbox_manager()->ProduceTexture(mailbox, produced);
 }
+
+void GLES2DecoderImpl::ProduceTextureRefSync(const char* func_name,
+                                             bool clear,
+											 gles2::TextureRef* texture_ref,
+											 GLenum target,
+											 Mailbox mailbox) {
+  for (int i = 0; i < GL_MAILBOX_SIZE_CHROMIUM; ++ i) {
+  }
+
+  if (clear) {
+    DCHECK(!texture_ref);
+    group_->mailbox_manager()->ProduceTexture(mailbox, nullptr);
+    return;
+  }
+
+  if (!texture_ref) {
+    return;
+  }
+  
+  XDisplay* xdpy = gfx::GetXDisplay();
+
+  eglMakeCurrent(xdpy, NULL, NULL, vmdisp_->ctx);
+  vmdisp_->vmdisp_event_loop();
+  texture_ref->texture()->set_service_id(vmdisp_->current_textureId);
+  texture_ref->texture()->set_target(GL_TEXTURE_2D);
+  eglMakeCurrent(xdpy, NULL, NULL, context_.get());
+
+  gles2::Texture* produced = group_->texture_manager()->Produce(texture_ref);
+  if (!produced) {
+    return;
+  }
+
+  if (produced->target() != target) {
+    return;
+  }
+
+  group_->mailbox_manager()->ProduceTexture(mailbox, produced);
+}  
 
 void GLES2DecoderImpl::DoConsumeTextureCHROMIUM(GLenum target,
                                                 const volatile GLbyte* data) {
@@ -17330,6 +17591,7 @@ void GLES2DecoderImpl::EnsureTextureForClientId(
     glBindTexture(target, service_id);
     RestoreCurrentTextureBindings(&state_, target);
   }
+
 }
 
 void GLES2DecoderImpl::DoCreateAndConsumeTextureINTERNAL(
@@ -17357,6 +17619,8 @@ void GLES2DecoderImpl::DoCreateAndConsumeTextureINTERNAL(
   Texture* texture =
       static_cast<Texture*>(group_->mailbox_manager()->ConsumeTexture(mailbox));
   if (!texture) {
+    for (int i = 0; i < GL_MAILBOX_SIZE_CHROMIUM; ++ i) {
+    }
     EnsureTextureForClientId(target, client_id);
     LOCAL_SET_GL_ERROR(
         GL_INVALID_OPERATION,
@@ -17371,11 +17635,12 @@ void GLES2DecoderImpl::DoCreateAndConsumeTextureINTERNAL(
         "glCreateAndConsumeTextureCHROMIUM", "invalid target");
     return;
   }
-
   texture_ref = texture_manager()->Consume(client_id, texture);
 }
 
+
 void GLES2DecoderImpl::DoApplyScreenSpaceAntialiasingCHROMIUM() {
+  return;
   Framebuffer* bound_framebuffer =
       GetFramebufferInfoForTarget(GL_DRAW_FRAMEBUFFER);
   // TODO(dshwang): support it even after glBindFrameBuffer(GL_FRAMEBUFFER, 0).

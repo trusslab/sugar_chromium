@@ -59,6 +59,7 @@
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
+#include "base/prints.h"
 
 #if defined(USE_AURA)
 #include "content/browser/compositor/mus_browser_compositor_output_surface.h"
@@ -98,6 +99,8 @@
 #if defined(ENABLE_VULKAN)
 #include "content/browser/compositor/vulkan_browser_compositor_output_surface.h"
 #endif
+
+#include "base/prints.h"
 
 using cc::ContextProvider;
 using gpu::gles2::GLES2Interface;
@@ -216,6 +219,7 @@ GpuProcessTransportFactory::~GpuProcessTransportFactory() {
 
   task_graph_runner_->Shutdown();
 }
+
 
 std::unique_ptr<cc::SoftwareOutputDevice>
 GpuProcessTransportFactory::CreateSoftwareOutputDevice(
@@ -588,7 +592,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       }
     } else {
       synthetic_begin_frame_source =
-          base::MakeUnique<cc::BackToBackBeginFrameSource>(
+          base::MakeUnique<cc::DelayBasedBeginFrameSource>(
               base::MakeUnique<cc::DelayBasedTimeSource>(
                   compositor->task_runner().get()));
       begin_frame_source = synthetic_begin_frame_source.get();

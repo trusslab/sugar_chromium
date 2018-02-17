@@ -34,6 +34,7 @@ namespace base {
 struct TrackingInfo;
 }
 
+
 // TrackedObjects provides a database of stats about objects (generally Tasks)
 // that are tracked.  Tracking means their birth, death, duration, birth thread,
 // death thread, and birth place are recorded.  This data is carefully spread
@@ -511,7 +512,7 @@ class BASE_EXPORT TaskStopwatch;
 typedef std::map<int, ProcessDataPhaseSnapshot> PhasedProcessDataSnapshotMap;
 
 class BASE_EXPORT ThreadData {
- public:
+public:
   // Current allowable states of the tracking system.  The states can vary
   // between ACTIVE and DEACTIVATED, but can never go back to UNINITIALIZED.
   enum Status {

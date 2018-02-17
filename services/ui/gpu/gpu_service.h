@@ -57,6 +57,11 @@ class GpuService : public gpu::GpuChannelManagerDelegate,
                           const gpu::GpuPreferences& preferences,
                           gpu::SyncPointManager* sync_point_manager = nullptr,
                           base::WaitableEvent* shutdown_event = nullptr);
+  void InitializeWithHost2(mojom::GpuHostPtr gpu_host,
+                          const gpu::GpuPreferences& preferences,
+                          gpu::SyncPointManager* sync_point_manager = nullptr,
+                          base::WaitableEvent* shutdown_event = nullptr, 
+						  gpu::gles2::MailboxManager* mailbox_manager = nullptr);
   void Bind(mojom::GpuServiceRequest request);
 
   media::MediaGpuChannelManager* media_gpu_channel_manager() {

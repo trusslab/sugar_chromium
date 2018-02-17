@@ -18,6 +18,9 @@ class IPC_EXPORT Sender {
   // is done to make this method easier to use.  Returns true on success and
   // false otherwise.
   virtual bool Send(Message* msg) = 0;
+  bool Send(Message* msg, bool webgl){
+	return Send(msg);
+  }
 
  protected:
   virtual ~Sender() {}

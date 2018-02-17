@@ -30,7 +30,6 @@
 #include "ui/aura/env.h"
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/gpu_memory_buffer.h"
-
 namespace exo {
 namespace {
 

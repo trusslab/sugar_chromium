@@ -172,14 +172,19 @@ class ContentSandboxHelper : public gpu::GpuSandboxHelper {
 
 }  // namespace
 
+
 // Main function for starting the Gpu process.
 int GpuMain(const MainFunctionParams& parameters) {
+  bool isRendererGpuThread;
   TRACE_EVENT0("gpu", "GpuMain");
   base::trace_event::TraceLog::GetInstance()->SetProcessName("GPU Process");
   base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventGpuProcessSortIndex);
 
   const base::CommandLine& command_line = parameters.command_line;
+  isRendererGpuThread = command_line.HasSwitch("renderer-gpu-thread");
+  fprintf(stderr, "%s [2]: isRendererGpuThread = %d\n", __PRETTY_FUNCTION__,
+							(int) isRendererGpuThread);
   if (command_line.HasSwitch(switches::kGpuStartupDialog)) {
     ChildProcess::WaitForDebugger("Gpu");
   }

@@ -19,7 +19,7 @@
 #if defined(OS_WIN)
 #include "base/synchronization/lock.h"
 #endif
-
+#include "content/renderer/render_gpu_thread_host_impl.h"
 namespace base {
 class TaskRunner;
 }
@@ -125,6 +125,7 @@ class CONTENT_EXPORT BrowserMessageFilter
   // made friends above. These are only guaranteed to be valid to call on
   // creation. After that this class could outlive the filter and new interface
   // registrations could race with incoming requests.
+  friend class RenderGpuThreadHostImpl;
   IPC::MessageFilter* GetFilter();
   void RegisterAssociatedInterfaces(IPC::ChannelProxy* proxy);
 

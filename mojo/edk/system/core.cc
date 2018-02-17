@@ -433,8 +433,9 @@ MojoResult Core::Watch(MojoHandle handle,
                        uintptr_t context) {
   RequestContext request_context;
   scoped_refptr<Dispatcher> dispatcher = GetDispatcher(handle);
-  if (!dispatcher)
-    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (!dispatcher) {
+	return MOJO_RESULT_INVALID_ARGUMENT;
+  }
   return dispatcher->Watch(
       signals, base::Bind(&CallWatchCallback, callback, context), context);
 }

@@ -1029,6 +1029,7 @@ const ResourceProvider::Resource* ResourceProvider::LockForRead(ResourceId id) {
     DCHECK(resource->origin != Resource::INTERNAL);
     DCHECK(resource->mailbox().IsTexture());
 
+
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
     resource->gl_id = gl->CreateAndConsumeTextureCHROMIUM(

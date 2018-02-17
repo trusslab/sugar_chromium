@@ -18,7 +18,7 @@
 #include "ui/gl/gl_image.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/scoped_binders.h"
-
+#include "base/debug/stack_trace.h"
 #if !defined(OS_MACOSX)
 #include "base/macros.h"
 #include "ui/gl/gl_surface_egl.h"

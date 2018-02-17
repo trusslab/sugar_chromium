@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "ui/gl/gl_surface_egl.h"
+#include "ui/gl/gl_surface_egl_gbm.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -32,6 +33,7 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/scoped_make_current.h"
 #include "ui/gl/sync_control_vsync_provider.h"
+#include "base/prints.h"
 
 #if defined(USE_X11) && !defined(OS_CHROMEOS)
 extern "C" {
@@ -570,6 +572,46 @@ bool GLSurfaceEGL::InitializeOneOff(EGLNativeDisplayType native_display) {
   return true;
 }
 
+bool GLSurfaceEGL::InitializeOneOffSugar(EGLNativeDisplayType native_display) {
+  if (initialized_)
+    return true;
+
+  g_driver_egl.InitializeClientExtensionBindings();
+
+  InitializeDisplaySugar(native_display);
+  if (g_display == EGL_NO_DISPLAY)
+    return false;
+
+  g_driver_egl.InitializeExtensionBindings();
+
+  g_egl_extensions = eglQueryString(g_display, EGL_EXTENSIONS);
+  g_egl_create_context_robustness_supported =
+      HasEGLExtension("EGL_EXT_create_context_robustness");
+  g_egl_create_context_bind_generates_resource_supported =
+      HasEGLExtension("EGL_CHROMIUM_create_context_bind_generates_resource");
+  g_egl_create_context_webgl_compatability_supported =
+      HasEGLExtension("EGL_ANGLE_create_context_webgl_compatibility");
+  g_egl_sync_control_supported =
+      HasEGLExtension("EGL_CHROMIUM_sync_control");
+  g_egl_window_fixed_size_supported =
+      HasEGLExtension("EGL_ANGLE_window_fixed_size");
+  g_egl_surface_orientation_supported =
+      HasEGLExtension("EGL_ANGLE_surface_orientation");
+
+  g_use_direct_composition =
+      HasEGLExtension("EGL_ANGLE_direct_composition") &&
+      HasEGLExtension("EGL_ANGLE_flexible_surface_compatibility") &&
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableDirectComposition);
+
+    if (!NativeViewGLSurfaceEGLGBM::InitializeSurface(gfx::Size(1, 1)))
+     fprintf(stderr, "%s: Error: could not initialize surface\n", __PRETTY_FUNCTION__);
+
+  initialized_ = true;
+
+  return true;
+}
+
 // static
 void GLSurfaceEGL::ShutdownOneOff() {
   ResetANGLEPlatform(g_display);
@@ -702,6 +744,29 @@ EGLDisplay GLSurfaceEGL::InitializeDisplay(
   }
 
   return g_display;
+}
+
+EGLDisplay GLSurfaceEGL::InitializeDisplaySugar(
+    EGLNativeDisplayType native_display) {
+  EGLint major, minor;
+
+  if (g_display != EGL_NO_DISPLAY) {
+    return g_display;
+  }
+
+  g_native_display = native_display;
+
+  EGLDisplay display = NativeViewGLSurfaceEGLGBM::GetGBMDisplay();
+
+  if (!eglInitialize(display, &major, &minor)) {
+    printf("failed to initialize\n");
+    return nullptr;
+  }
+
+  g_display = display;
+
+  return g_display;
+
 }
 
 NativeViewGLSurfaceEGL::NativeViewGLSurfaceEGL(EGLNativeWindowType window)

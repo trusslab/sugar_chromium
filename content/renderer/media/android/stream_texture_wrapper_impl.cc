@@ -10,6 +10,8 @@
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "media/base/bind_to_current_loop.h"
 
+#include "base/prints.h"
+
 using gpu::gles2::GLES2Interface;
 
 static const uint32_t kGLTextureExternalOES = GL_TEXTURE_EXTERNAL_OES;

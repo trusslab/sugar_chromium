@@ -30,6 +30,9 @@
 #include "ui/gl/gl_share_group.h"
 #include "ui/gl/init/gl_factory.h"
 
+#include "gpu/ipc/service/gpu_init.h"
+#include "base/prints.h"
+
 namespace gpu {
 
 namespace {
@@ -61,7 +64,41 @@ GpuChannelManager::GpuChannelManager(
       watchdog_(watchdog),
       shutdown_event_(shutdown_event),
       share_group_(new gl::GLShareGroup()),
-      mailbox_manager_(gles2::MailboxManager::Create(gpu_preferences)),
+      mailbox_manager_(gles2::MailboxManager::Create(gpu_preferences, false)),
+      gpu_memory_manager_(this),
+      sync_point_manager_(sync_point_manager),
+      sync_point_client_waiter_(
+          sync_point_manager->CreateSyncPointClientWaiter()),
+      gpu_memory_buffer_factory_(gpu_memory_buffer_factory),
+      gpu_feature_info_(gpu_feature_info),
+      exiting_for_lost_context_(false),
+      weak_factory_(this) {
+  DCHECK(task_runner);
+  DCHECK(io_task_runner);
+  if (gpu_preferences_.ui_prioritize_in_gpu_process)
+    preemption_flag_ = new PreemptionFlag;
+}
+
+GpuChannelManager::GpuChannelManager(
+    const GpuPreferences& gpu_preferences,
+    GpuChannelManagerDelegate* delegate,
+    GpuWatchdogThread* watchdog,
+    base::SingleThreadTaskRunner* task_runner,
+    base::SingleThreadTaskRunner* io_task_runner,
+    base::WaitableEvent* shutdown_event,
+    SyncPointManager* sync_point_manager,
+    GpuMemoryBufferFactory* gpu_memory_buffer_factory,
+    const GpuFeatureInfo& gpu_feature_info,
+	gles2::MailboxManager* mailbox_manager)
+    : task_runner_(task_runner),
+      io_task_runner_(io_task_runner),
+      gpu_preferences_(gpu_preferences),
+      gpu_driver_bug_workarounds_(base::CommandLine::ForCurrentProcess()),
+      delegate_(delegate),
+      watchdog_(watchdog),
+      shutdown_event_(shutdown_event),
+      share_group_(new gl::GLShareGroup()),
+      mailbox_manager_(mailbox_manager),
       gpu_memory_manager_(this),
       sync_point_manager_(sync_point_manager),
       sync_point_client_waiter_(

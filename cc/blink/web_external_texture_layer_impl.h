@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "base/macros.h"
+#include "base/synchronization/waitable_event.h"
 #include "cc/blink/cc_blink_export.h"
 #include "third_party/WebKit/public/platform/WebExternalTextureLayer.h"
 
@@ -34,6 +35,8 @@ class WebExternalTextureLayerImpl : public blink::WebExternalTextureLayer {
  private:
   std::unique_ptr<WebLayerImpl> layer_;
 
+
+  base::TimeDelta kTenMs;
   DISALLOW_COPY_AND_ASSIGN(WebExternalTextureLayerImpl);
 };
 

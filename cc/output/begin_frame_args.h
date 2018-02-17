@@ -81,6 +81,7 @@ struct CC_EXPORT BeginFrameArgs {
   // This is the default interval to use to avoid sprinkling the code with
   // magic numbers.
   static base::TimeDelta DefaultInterval();
+  static base::TimeDelta ZeroInterval();
 
   bool IsValid() const { return interval >= base::TimeDelta(); }
 

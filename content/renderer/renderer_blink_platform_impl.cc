@@ -139,6 +139,13 @@
 #include "content/renderer/media/rtc_certificate_generator.h"
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #endif
+#include "content/renderer/gpu/render_gpu_channel_host_factory.h"
+
+#include "content/renderer/render_thread_impl.h"
+#include "base/debug/stack_trace.h"
+#include "gpu/ipc/client/gpu_channel_host.h"
+#include "gpu/ipc/client/command_buffer_proxy_impl.h"
+#include "base/prints.h"
 
 using blink::Platform;
 using blink::WebAudioDevice;
@@ -954,8 +961,9 @@ RendererBlinkPlatformImpl::createOffscreenGraphicsContext3DProvider(
     return nullptr;
   }
 
-  scoped_refptr<gpu::GpuChannelHost> gpu_channel_host(
-      RenderThreadImpl::current()->EstablishGpuChannelSync());
+     scoped_refptr<gpu::GpuChannelHost> gpu_channel_host(
+         RenderThreadImpl::current()->EstablishGpuChannelSync());
+    
   if (!gpu_channel_host) {
     std::string error_message(
         "OffscreenContext Creation failed, GpuChannelHost creation failed");
@@ -1016,6 +1024,92 @@ RendererBlinkPlatformImpl::createOffscreenGraphicsContext3DProvider(
           GURL(top_document_web_url), automatic_flushes, support_locking,
           gpu::SharedMemoryLimits(), attributes, share_context,
           ui::command_buffer_metrics::OFFSCREEN_CONTEXT_FOR_WEBGL));
+  return new WebGraphicsContext3DProviderImpl(std::move(provider),
+                                              is_software_rendering);
+    
+}
+
+blink::WebGraphicsContext3DProvider*
+RendererBlinkPlatformImpl::createOffscreenGraphicsContext3DProviderForWebgl(
+    const blink::Platform::ContextAttributes& web_attributes,
+    const blink::WebURL& top_document_web_url,
+    blink::WebGraphicsContext3DProvider* share_provider,
+    blink::Platform::GraphicsInfo* gl_info) {
+
+  DCHECK(gl_info);
+  if (!RenderThreadImpl::current()) {
+    std::string error_message("Failed to run in Current RenderThreadImpl");
+    gl_info->errorMessage = WebString::fromUTF8(error_message);
+    return nullptr;
+  }
+
+     RenderThreadImpl::current()->GetGpuThreadTaskRunner();
+     scoped_refptr<gpu::GpuThreadHost> gpu_channel_host
+         = RenderThreadImpl::current()->EstablishGpuThreadChannel();
+    if(gpu_channel_host.get()){
+    }
+
+  if (!gpu_channel_host) {
+    std::string error_message(
+        "OffscreenContext Creation failed, GpuChannelHost creation failed");
+    gl_info->errorMessage = WebString::fromUTF8(error_message);
+    return nullptr;
+  }
+  Collect3DContextInformation(gl_info, gpu_channel_host->gpu_info());
+
+  content::WebGraphicsContext3DProviderImpl* share_provider_impl =
+      static_cast<content::WebGraphicsContext3DProviderImpl*>(share_provider);
+  ui::ContextProviderCommandBuffer* share_context = nullptr;
+
+  if (share_provider_impl) {
+    auto* gl = share_provider_impl->contextGL();
+    if (gl->GetGraphicsResetStatusKHR() != GL_NO_ERROR) {
+      std::string error_message(
+          "OffscreenContext Creation failed, Shared context is lost");
+      gl_info->errorMessage = WebString::fromUTF8(error_message);
+      return nullptr;
+    }
+    share_context = share_provider_impl->context_provider();
+  }
+
+  bool is_software_rendering = gpu_channel_host->gpu_info().software_rendering;
+
+  gpu::gles2::ContextCreationAttribHelper attributes;
+  attributes.alpha_size = web_attributes.supportAlpha ? 8 : -1;
+  attributes.depth_size = web_attributes.supportDepth ? 24 : 0;
+  attributes.stencil_size = web_attributes.supportStencil ? 8 : 0;
+  attributes.samples = web_attributes.supportAntialias ? 4 : 0;
+  attributes.sample_buffers = 0;
+  attributes.bind_generates_resource = false;
+  attributes.gpu_preference = gl::PreferDiscreteGpu;
+
+  attributes.fail_if_major_perf_caveat =
+      web_attributes.failIfMajorPerformanceCaveat;
+  DCHECK_GT(web_attributes.webGLVersion, 0u);
+  DCHECK_LE(web_attributes.webGLVersion, 2u);
+  if (web_attributes.webGLVersion == 2)
+    attributes.context_type = gpu::gles2::CONTEXT_TYPE_WEBGL2;
+  else
+    attributes.context_type = gpu::gles2::CONTEXT_TYPE_WEBGL1;
+
+  constexpr bool automatic_flushes = true;
+  constexpr bool support_locking = false;
+
+  scoped_refptr<ui::ContextProviderCommandBuffer> provider(
+      new ui::ContextProviderCommandBuffer(
+          std::move(gpu_channel_host), gpu::GPU_STREAM_DEFAULT,
+          gpu::GpuStreamPriority::NORMAL, gpu::kNullSurfaceHandle,
+          GURL(top_document_web_url), automatic_flushes, support_locking,
+          gpu::SharedMemoryLimits(), attributes, share_context,
+          ui::command_buffer_metrics::OFFSCREEN_CONTEXT_FOR_WEBGL,
+		  RenderThreadImpl::current()->GetGpuThreadTaskRunner(),
+		  RenderThreadImpl::current()->SharedCompositorWorkerContextProvider()->
+		                                             command_buffer()->channel(),
+		  RenderThreadImpl::current()->SharedCompositorWorkerContextProvider()->
+		                                             command_buffer()->route_id(),
+		  RenderThreadImpl::current()->SharedCompositorWorkerContextProvider()->
+		                                             gles2_impl()
+		  ));
   return new WebGraphicsContext3DProviderImpl(std::move(provider),
                                               is_software_rendering);
 }

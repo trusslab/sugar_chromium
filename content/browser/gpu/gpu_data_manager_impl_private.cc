@@ -57,6 +57,8 @@
 #include "base/win/windows_version.h"
 #endif  // OS_WIN
 
+#include "base/prints.h"
+
 namespace content {
 
 namespace {
@@ -255,7 +257,6 @@ void DisplayReconfigCallback(CGDirectDisplayID display,
 // Block all domains' use of 3D APIs for this many milliseconds if
 // approaching a threshold where system stability might be compromised.
 const int64_t kBlockAllDomainsMs = 10000;
-const int kNumResetsWithinDuration = 1;
 
 // Enums for UMA histograms.
 enum BlockStatusHistogram {
@@ -1177,17 +1178,15 @@ void GpuDataManagerImplPrivate::InitializeImpl(
     gpu_blacklist_.reset(gpu::GpuBlacklist::Create());
     if (log_gpu_control_list_decisions)
       gpu_blacklist_->enable_control_list_logging("gpu_blacklist");
-    bool success = gpu_blacklist_->LoadList(
+    gpu_blacklist_->LoadList(
         gpu_blacklist_json, gpu::GpuControlList::kCurrentOsOnly);
-    DCHECK(success);
   }
   if (!gpu_driver_bug_list_json.empty()) {
     gpu_driver_bug_list_.reset(gpu::GpuDriverBugList::Create());
     if (log_gpu_control_list_decisions)
       gpu_driver_bug_list_->enable_control_list_logging("gpu_driver_bug_list");
-    bool success = gpu_driver_bug_list_->LoadList(
+    gpu_driver_bug_list_->LoadList(
         gpu_driver_bug_list_json, gpu::GpuControlList::kCurrentOsOnly);
-    DCHECK(success);
   }
 
   gpu_info_ = gpu_info;
@@ -1323,13 +1322,7 @@ GpuDataManagerImplPrivate::Are3DAPIsBlockedAtTime(
       ++iter;
     }
 
-    if (num_resets_within_timeframe >= kNumResetsWithinDuration) {
-      UMA_HISTOGRAM_ENUMERATION("GPU.BlockStatusForClient3DAPIs",
-                                BLOCK_STATUS_ALL_DOMAINS_BLOCKED,
-                                BLOCK_STATUS_MAX);
 
-      return GpuDataManagerImpl::DOMAIN_BLOCK_STATUS_ALL_DOMAINS_BLOCKED;
-    }
   }
 
   UMA_HISTOGRAM_ENUMERATION("GPU.BlockStatusForClient3DAPIs",

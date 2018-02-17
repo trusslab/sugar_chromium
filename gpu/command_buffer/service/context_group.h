@@ -50,7 +50,7 @@ struct PassthroughResources;
 
 // A Context Group helps manage multiple GLES2Decoders that share
 // resources.
-class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
+class GPU_EXPORT ContextGroup : public base::RefCountedThreadSafe<ContextGroup> {
  public:
   ContextGroup(
       const GpuPreferences& gpu_preferences,
@@ -232,7 +232,7 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   const GpuFeatureInfo& gpu_feature_info() const { return gpu_feature_info_; }
 
  private:
-  friend class base::RefCounted<ContextGroup>;
+  friend class base::RefCountedThreadSafe<ContextGroup>;
   ~ContextGroup();
 
   bool CheckGLFeature(GLint min_required, GLint* v);

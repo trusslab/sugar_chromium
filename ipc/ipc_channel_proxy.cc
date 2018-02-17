@@ -25,6 +25,7 @@
 #include "ipc/message_filter.h"
 #include "ipc/message_filter_router.h"
 
+#include "base/debug/stack_trace.h"
 namespace IPC {
 
 //------------------------------------------------------------------------------
@@ -47,6 +48,21 @@ ChannelProxy::Context::Context(
   // Note, we currently make an exception for a NULL listener. That usage
   // basically works, but is outside the intent of ChannelProxy. This support
   // will disappear, so please don't rely on it. See crbug.com/364241
+  DCHECK(!listener || (ipc_task_runner_.get() != listener_task_runner_.get()));
+}
+
+ChannelProxy::Context::Context(
+    bool webgl,
+	Listener* listener,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner)
+    : webgl_(webgl),
+	  listener_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+      listener_(listener),
+      ipc_task_runner_(ipc_task_runner),
+      channel_connected_called_(false),
+      message_filter_router_(new MessageFilterRouter()),
+      peer_pid_(base::kNullProcessId) {
+  DCHECK(ipc_task_runner_.get());
   DCHECK(!listener || (ipc_task_runner_.get() != listener_task_runner_.get()));
 }
 
@@ -239,6 +255,23 @@ void ChannelProxy::Context::OnSendMessage(std::unique_ptr<Message> message) {
     OnChannelError();
 }
 
+void ChannelProxy::Context::OnSendMessage2(std::unique_ptr<Message> message, bool webgl) {
+  
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "477117 ChannelProxy::Context::OnSendMessage"));
+  if (!channel_) {
+    OnChannelClosed();
+    return;
+  }
+
+  if(webgl){
+  }
+  
+  if (!channel_->Send(message.release()))
+    OnChannelError();
+}
+
 // Called on the IPC::Channel thread
 void ChannelProxy::Context::OnAddFilter() {
   // Our OnChannelConnected method has not yet been called, so we can't be
@@ -397,6 +430,12 @@ void ChannelProxy::Context::Send(Message* message) {
                             base::Passed(base::WrapUnique(message))));
 }
 
+void ChannelProxy::Context::Send(Message* message, bool webgl) {
+  ipc_task_runner()->PostTask(
+      FROM_HERE, base::Bind(&ChannelProxy::Context::OnSendMessage2, this,
+                            base::Passed(base::WrapUnique(message)), webgl));
+}
+
 //-----------------------------------------------------------------------------
 
 // static
@@ -429,10 +468,28 @@ ChannelProxy::ChannelProxy(Context* context)
 #endif
 }
 
+ChannelProxy::ChannelProxy(bool webgl, Context* context)
+    : context_(context), did_init_(false), webgl_(webgl) {
+#if defined(ENABLE_IPC_FUZZER)
+  outgoing_message_filter_ = NULL;
+#endif
+}
+
 ChannelProxy::ChannelProxy(
     Listener* listener,
     const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner)
     : context_(new Context(listener, ipc_task_runner)), did_init_(false) {
+#if defined(ENABLE_IPC_FUZZER)
+  outgoing_message_filter_ = NULL;
+#endif
+}
+
+ChannelProxy::ChannelProxy(
+    bool webgl,
+	Listener* listener,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner)
+    : context_(new Context(listener, ipc_task_runner)), did_init_(false),
+	  webgl_(webgl) {
 #if defined(ENABLE_IPC_FUZZER)
   outgoing_message_filter_ = NULL;
 #endif
@@ -456,9 +513,15 @@ void ChannelProxy::Init(const IPC::ChannelHandle& channel_handle,
     create_pipe_now = true;
   }
 #endif  // defined(OS_POSIX)
-  Init(
-      ChannelFactory::Create(channel_handle, mode, context_->ipc_task_runner()),
-      create_pipe_now);
+  if (webgl_) {
+    Init(
+        ChannelFactory::Create(webgl_, channel_handle, mode, context_->ipc_task_runner()),
+        create_pipe_now);
+  } else {
+    Init(
+        ChannelFactory::Create(channel_handle, mode, context_->ipc_task_runner()),
+        create_pipe_now);
+  }
 }
 
 void ChannelProxy::Init(std::unique_ptr<ChannelFactory> factory,
@@ -535,6 +598,22 @@ bool ChannelProxy::Send(Message* message) {
 #endif
 
   context_->Send(message);
+  return true;
+}
+
+bool ChannelProxy::Send(Message* message, bool webgl) {
+  DCHECK(did_init_);
+
+#ifdef ENABLE_IPC_FUZZER
+  if (outgoing_message_filter())
+    message = outgoing_message_filter()->Rewrite(message);
+#endif
+
+#ifdef IPC_MESSAGE_LOG_ENABLED
+  Logging::GetInstance()->OnSendMessage(message);
+#endif
+
+  context_->Send(message, webgl);
   return true;
 }
 

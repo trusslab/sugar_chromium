@@ -250,7 +250,7 @@
 #if BUILDFLAG(USE_MINIKIN_HYPHENATION)
 #include "content/browser/hyphenation/hyphenation_impl.h"
 #endif
-
+#include "base/debug/stack_trace.h"
 #if defined(OS_WIN)
 #define IntToStringType base::IntToString16
 #else
@@ -2037,7 +2037,6 @@ bool RenderProcessHostImpl::Send(IPC::Message* msg) {
 bool RenderProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
   // If we're about to be deleted, or have initiated the fast shutdown sequence,
   // we ignore incoming messages.
-
   if (deleting_soon_ || fast_shutdown_started_)
     return false;
 

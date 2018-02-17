@@ -39,7 +39,7 @@
 #elif defined(OS_WIN)
 #include "content/common/font_cache_dispatcher_win.h"
 #endif  // OS_LINUX
-
+#include "base/debug/stack_trace.h"
 namespace {
 
 // Global atomic to generate child process unique IDs.
@@ -155,6 +155,7 @@ bool ChildProcessHostImpl::InitChannel() {
   if (!channel_->Connect())
     return false;
 
+
   for (size_t i = 0; i < filters_.size(); ++i)
     filters_[i]->OnFilterAdded(channel_.get());
   delegate_->OnChannelInitialized(channel_.get());
@@ -164,7 +165,6 @@ bool ChildProcessHostImpl::InitChannel() {
   bool enabled = IPC::Logging::GetInstance()->Enabled();
   Send(new ChildProcessMsg_SetIPCLoggingEnabled(enabled));
 #endif
-
   opening_channel_ = true;
 
   return true;

@@ -27,6 +27,12 @@ class IPC_EXPORT ChannelFactory {
       Channel::Mode mode,
       const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner);
 
+  static std::unique_ptr<ChannelFactory> Create(
+      bool webgl,
+	  const ChannelHandle& handle,
+      Channel::Mode mode,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner);
+
   virtual ~ChannelFactory() { }
   virtual std::unique_ptr<Channel> BuildChannel(Listener* listener) = 0;
   virtual scoped_refptr<base::SingleThreadTaskRunner> GetIPCTaskRunner() = 0;

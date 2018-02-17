@@ -13,7 +13,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-
 #include "base/atomicops.h"
 #include "base/logging.h"
 #include "base/macros.h"
@@ -22,7 +21,8 @@
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/gles2_cmd_ids.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
-
+#if !defined(OS_MACOSX)
+#endif 
 // GL types are forward declared to avoid including the GL headers. The problem
 // is determining which GL headers to include from code that is common to the
 // client and service sides (GLES2 or one of several GL implementations).
@@ -290,6 +290,7 @@ static_assert(offsetof(UniformBlocksHeader, num_uniform_blocks) == 0,
 namespace cmds {
 
 #include "../common/gles2_cmd_format_autogen.h"
+
 
 #pragma pack(pop)
 

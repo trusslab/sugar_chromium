@@ -890,22 +890,7 @@ Address NormalPageArena::outOfLineAllocate(size_t allocationSize,
   // 3. Reset the allocation point.
   setAllocationPoint(nullptr, 0);
 
-  // 4. Lazily sweep pages of this heap until we find a freed area for
-  // this allocation or we finish sweeping all pages of this heap.
-  result = lazySweep(allocationSize, gcInfoIndex);
-  if (result)
-    return result;
 
-  // 5. Coalesce promptly freed areas and then try to allocate from a free
-  // list.
-  if (coalesce()) {
-    result = allocateFromFreeList(allocationSize, gcInfoIndex);
-    if (result)
-      return result;
-  }
-
-  // 6. Complete sweeping.
-  getThreadState()->completeSweep();
 
   // 7. Check if we should trigger a GC.
   getThreadState()->scheduleGCIfNeeded();
@@ -1293,6 +1278,7 @@ static void discardPages(Address begin, Address end) {
 #endif
 
 void NormalPage::sweep() {
+  return;
   size_t markedObjectSize = 0;
   Address startOfGap = payload();
   NormalPageArena* pageArena = arenaForNormalPage();

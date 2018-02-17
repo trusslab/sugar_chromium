@@ -18,7 +18,7 @@
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_version_info.h"
-
+#include "base/debug/stack_trace.h"
 namespace gpu {
 namespace gles2 {
 

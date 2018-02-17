@@ -58,9 +58,11 @@ class GL_EXPORT GLSurfaceEGL : public GLSurface {
   GLSurfaceFormat GetFormat() override;
 
   static bool InitializeOneOff(EGLNativeDisplayType native_display);
+  static bool InitializeOneOffSugar(EGLNativeDisplayType native_display);
   static void ShutdownOneOff();
   static EGLDisplay GetHardwareDisplay();
   static EGLDisplay InitializeDisplay(EGLNativeDisplayType native_display);
+  static EGLDisplay InitializeDisplaySugar(EGLNativeDisplayType native_display);
   static EGLNativeDisplayType GetNativeDisplay();
 
   // These aren't particularly tied to surfaces, but since we already

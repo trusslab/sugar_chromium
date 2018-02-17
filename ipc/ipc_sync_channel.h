@@ -102,9 +102,16 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
       const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
       base::WaitableEvent* shutdown_event);
 
+  static std::unique_ptr<SyncChannel> Create(
+      bool webgl,
+	  Listener* listener,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+      base::WaitableEvent* shutdown_event);
+
   ~SyncChannel() override;
 
   bool Send(Message* message) override;
+  bool Send(Message* message, bool webgl);
 
   // Sets the dispatch group for this channel, to only allow re-entrant dispatch
   // of messages to other channels in the same group.
@@ -139,6 +146,12 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
    public:
     SyncContext(
         Listener* listener,
+        const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+        base::WaitableEvent* shutdown_event);
+
+    SyncContext(
+        bool webgl,
+		Listener* listener,
         const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
         base::WaitableEvent* shutdown_event);
 
@@ -216,6 +229,12 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
       const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
       base::WaitableEvent* shutdown_event);
 
+  SyncChannel(
+      bool webgl,
+	  Listener* listener,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+      base::WaitableEvent* shutdown_event);
+
   void OnDispatchHandleReady(MojoResult result);
 
   SyncContext* sync_context() {
@@ -247,6 +266,7 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
   std::vector<scoped_refptr<SyncMessageFilter>> pre_init_sync_message_filters_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncChannel);
+
 };
 
 }  // namespace IPC

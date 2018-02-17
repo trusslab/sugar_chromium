@@ -46,6 +46,22 @@ class GPU_EXPORT SharedMemoryBufferBacking : public BufferBacking {
   DISALLOW_COPY_AND_ASSIGN(SharedMemoryBufferBacking);
 };
 
+
+class GPU_EXPORT ThreadBufferBacking : public BufferBacking {
+ public:
+  ThreadBufferBacking(void* memory,
+                      size_t size);
+  ~ThreadBufferBacking() override;
+  bool is_shared() const override;
+  void* GetMemory() const override;
+  size_t GetSize() const override;
+
+ private:
+  void* memory_;
+  size_t size_;
+  DISALLOW_COPY_AND_ASSIGN(ThreadBufferBacking);
+};
+
 // Buffer owns a piece of shared-memory of a certain size.
 class GPU_EXPORT Buffer : public base::RefCountedThreadSafe<Buffer> {
  public:
@@ -74,6 +90,20 @@ class GPU_EXPORT Buffer : public base::RefCountedThreadSafe<Buffer> {
 
   DISALLOW_COPY_AND_ASSIGN(Buffer);
 };
+
+static inline std::unique_ptr<BufferBacking> MakeBackingFromMemory(
+    void *memory,
+    size_t size) {
+  return std::unique_ptr<BufferBacking>(
+      new ThreadBufferBacking(memory, size));
+}
+
+static inline scoped_refptr<Buffer> MakeBufferFromMemory(
+    void* memory,
+    size_t size) {
+  return new Buffer(
+      MakeBackingFromMemory(memory, size));
+}
 
 static inline std::unique_ptr<BufferBacking> MakeBackingFromSharedMemory(
     std::unique_ptr<base::SharedMemory> shared_memory,

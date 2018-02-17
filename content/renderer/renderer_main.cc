@@ -35,6 +35,20 @@
 #include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "ui/base/ui_base_switches.h"
+#include "content/browser/gpu/gpu_data_manager_impl.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
+#include "ui/gl/gl_switches.h"
+#include "content/public/common/mojo_channel_switches.h"
+#include "components/tracing/common/tracing_switches.h"
+#include "gpu/ipc/service/switches.h"
+#include "media/base/media_switches.h"
+#include "ui/gfx/switches.h"
+#include "ui/gfx/x/x11_switches.h"
+#if defined(USE_OZONE)
+#include "ui/ozone/public/ozone_switches.h"
+#endif
+#include "content/gpu/renderer_gpu_thread.h"
+#include <sys/syscall.h>
 
 #if defined(OS_ANDROID)
 #include "base/android/library_loader/library_loader_hooks.h"
@@ -62,6 +76,8 @@
 #include "ui/ozone/public/client_native_pixmap_factory.h"
 #endif
 
+#include "base/prints.h"
+
 namespace content {
 namespace {
 // This function provides some ways to test crash and assertion handling
@@ -82,22 +98,126 @@ base::LazyInstance<std::unique_ptr<ui::ClientNativePixmapFactory>>
 
 }  // namespace
 
+/* kSwitchNames is copied from gpu_process_host.cc */
+static const char* const kSwitchNames[] = {
+    switches::kCreateDefaultGLContext,
+    switches::kDisableAcceleratedVideoDecode,
+    switches::kDisableBreakpad,
+    switches::kDisableES3GLContext,
+    switches::kDisableGpuRasterization,
+    switches::kDisableGpuSandbox,
+    switches::kDisableGpuWatchdog,
+    switches::kDisableGLExtensions,
+    switches::kDisableLogging,
+    switches::kDisableSeccompFilterSandbox,
+#if BUILDFLAG(ENABLE_WEBRTC)
+    switches::kDisableWebRtcHWEncoding,
+#endif
+#if defined(OS_WIN)
+    switches::kEnableAcceleratedVpxDecode,
+#endif
+    switches::kEnableGpuRasterization,
+    switches::kEnableHeapProfiling,
+    switches::kEnableLogging,
+#if defined(OS_CHROMEOS)
+    switches::kDisableVaapiAcceleratedVideoEncode,
+#endif
+    switches::kGpuDriverBugWorkarounds,
+    switches::kGpuStartupDialog,
+    switches::kGpuSandboxAllowSysVShm,
+    switches::kGpuSandboxFailuresFatal,
+    switches::kGpuSandboxStartEarly,
+    switches::kHeadless,
+    switches::kLoggingLevel,
+    switches::kEnableLowEndDeviceMode,
+    switches::kDisableLowEndDeviceMode,
+    switches::kNoSandbox,
+    switches::kProfilerTiming,
+    switches::kTestGLLib,
+    switches::kTraceConfigFile,
+    switches::kTraceStartup,
+    switches::kTraceToConsole,
+    switches::kUseGpuInTests,
+    switches::kV,
+    switches::kVModule,
+#if defined(OS_MACOSX)
+    switches::kDisableAVFoundationOverlays,
+    switches::kDisableRemoteCoreAnimation,
+    switches::kEnableSandboxLogging,
+    switches::kShowMacOverlayBorders,
+#endif
+#if defined(USE_OZONE)
+    switches::kOzonePlatform,
+#endif
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+    switches::kX11Display,
+#endif
+    switches::kGpuTestingGLVendor,
+    switches::kGpuTestingGLRenderer,
+    switches::kGpuTestingGLVersion,
+    switches::kDisableGpuDriverBugWorkarounds,
+    switches::kUsePassthroughCmdDecoder
+};
+
+void dummy(){
+}
+
+bool LaunchRendererGpuThread(const std::string& channel_id) {
+
+  const base::CommandLine& browser_command_line =
+      *base::CommandLine::ForCurrentProcess();
+
+  base::CommandLine* cmd_line = new base::CommandLine(base::CommandLine::NO_PROGRAM);
+
+  cmd_line->AppendSwitch("renderer-gpu-thread");
+
+  cmd_line->AppendSwitchASCII(switches::kProcessType, switches::kGpuProcess);
+
+    cmd_line->AppendSwitch(switches::kDisableGpuSandbox);
+
+  cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
+                             arraysize(kSwitchNames));
+  cmd_line->CopySwitchesFrom(
+      browser_command_line, switches::kGLSwitchesCopiedFromGpuProcessHost,
+      switches::kGLSwitchesCopiedFromGpuProcessHostNumSwitches);
+
+  GpuDataManagerImpl::GetInstance()->AppendGpuCommandLine(cmd_line, nullptr);
+
+  RendererGpuThread* renderer_gpu_thread = new RendererGpuThread(cmd_line);
+
+  base::Thread::Options options;
+  options.timer_slack = base::TIMER_SLACK_MAXIMUM;
+  renderer_gpu_thread->StartWithOptions(options);
+  renderer_gpu_thread -> task_runner() -> PostTask(FROM_HERE, base::Bind(&dummy));
+
+  return true;
+}
+
+bool RendererGpuThreadInit() {
+
+  TRACE_EVENT_INSTANT0("gpu", "LaunchRendererGpuProcess", TRACE_EVENT_SCOPE_THREAD);
+
+  std::string channel_id = "unused";
+
+  if (!LaunchRendererGpuThread(channel_id)) {
+    return false;
+  }
+
+  return true;
+}
+
 // mainline routine for running as the Renderer process
 int RendererMain(const MainFunctionParams& parameters) {
   // Don't use the TRACE_EVENT0 macro because the tracing infrastructure doesn't
   // expect synchronous events around the main loop of a thread.
   TRACE_EVENT_ASYNC_BEGIN0("startup", "RendererMain", 0);
-
   base::trace_event::TraceLog::GetInstance()->SetProcessName("Renderer");
   base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventRendererProcessSortIndex);
-
   const base::CommandLine& parsed_command_line = parameters.command_line;
-
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool* pool = parameters.autorelease_pool;
 #endif  // OS_MACOSX
-
 #if defined(OS_CHROMEOS)
   // As Zygote process starts up earlier than browser process gets its own
   // locale (at login time for Chrome OS), we have to set the ICU default
@@ -109,7 +229,6 @@ int RendererMain(const MainFunctionParams& parameters) {
     base::i18n::SetICUDefaultLocale(locale);
   }
 #endif
-
   SkGraphics::Init();
 #if defined(OS_ANDROID)
   const int kMB = 1024 * 1024;
@@ -117,18 +236,15 @@ int RendererMain(const MainFunctionParams& parameters) {
       base::SysInfo::IsLowEndDevice() ? kMB : 8 * kMB;
   SkGraphics::SetFontCacheLimit(font_cache_limit);
 #endif
-
 #if defined(USE_OZONE)
   g_pixmap_factory.Get() = ui::ClientNativePixmapFactory::Create();
   ui::ClientNativePixmapFactory::SetInstance(g_pixmap_factory.Get().get());
 #endif
-
   // This function allows pausing execution using the --renderer-startup-dialog
   // flag allowing us to attach a debugger.
   // Do not move this function down since that would mean we can't easily debug
   // whatever occurs before it.
   HandleRendererErrorTestParameters(parsed_command_line);
-
   RendererMainPlatformDelegate platform(parameters);
 #if defined(OS_MACOSX)
   // As long as scrollbars on Mac are painted with Cocoa, the message pump
@@ -141,25 +257,18 @@ int RendererMain(const MainFunctionParams& parameters) {
   // The main message loop of the renderer services doesn't have IO or UI tasks.
   std::unique_ptr<base::MessageLoop> main_message_loop(new base::MessageLoop());
 #endif
-
   base::PlatformThread::SetName("CrRendererMain");
-
   bool no_sandbox = parsed_command_line.HasSwitch(switches::kNoSandbox);
-
   // Initialize histogram statistics gathering system.
   base::StatisticsRecorder::Initialize();
-
 #if defined(OS_ANDROID)
   // If we have any pending LibraryLoader histograms, record them.
   base::android::RecordLibraryLoaderRendererHistograms();
 #endif
-
   std::unique_ptr<blink::scheduler::RendererScheduler> renderer_scheduler(
       blink::scheduler::RendererScheduler::Create());
-
   // PlatformInitialize uses FieldTrials, so this must happen later.
   platform.PlatformInitialize();
-
 #if BUILDFLAG(ENABLE_PLUGINS)
   // Load pepper plugins before engaging the sandbox.
   PepperPluginRegistry::GetInstance();
@@ -171,7 +280,6 @@ int RendererMain(const MainFunctionParams& parameters) {
   // is OK.
   InitializeWebRtcModule();
 #endif
-
   {
 #if defined(OS_WIN) || defined(OS_MACOSX)
     // TODO(markus): Check if it is OK to unconditionally move this
@@ -188,9 +296,7 @@ int RendererMain(const MainFunctionParams& parameters) {
     RenderThreadImpl::Create(std::move(main_message_loop),
                              std::move(renderer_scheduler));
 #endif
-
     base::HighResolutionTimerManager hi_res_timer_manager;
-
     if (run_loop) {
 #if defined(OS_MACOSX)
       if (pool)
@@ -200,7 +306,6 @@ int RendererMain(const MainFunctionParams& parameters) {
       base::RunLoop().Run();
       TRACE_EVENT_ASYNC_END0("toplevel", "RendererMain.START_MSG_LOOP", 0);
     }
-
 #if defined(LEAK_SANITIZER)
     // Run leak detection before RenderProcessImpl goes out of scope. This helps
     // ignore shutdown-only leaks.

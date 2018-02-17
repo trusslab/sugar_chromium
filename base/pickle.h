@@ -40,6 +40,8 @@ class BASE_EXPORT PickleIterator {
   // after that.
   bool ReadBool(bool* result) WARN_UNUSED_RESULT;
   bool ReadInt(int* result) WARN_UNUSED_RESULT;
+  bool ReadEglImageKHR(void** result) WARN_UNUSED_RESULT;
+ 
   bool ReadLong(long* result) WARN_UNUSED_RESULT;
   bool ReadUInt16(uint16_t* result) WARN_UNUSED_RESULT;
   bool ReadUInt32(uint32_t* result) WARN_UNUSED_RESULT;
@@ -232,6 +234,12 @@ class BASE_EXPORT Pickle {
     // Always write long as a 64-bit value to ensure compatibility between
     // 32-bit and 64-bit processes.
     return WritePOD(static_cast<int64_t>(value));
+  }
+ bool WriteEglImageKHR(void* value) {
+    return WritePOD(value);
+  }
+  bool WriteLongUsingDangerousNonPortableLessPersistableForm(long value) {
+    return WritePOD(value);
   }
   bool WriteUInt16(uint16_t value) { return WritePOD(value); }
   bool WriteUInt32(uint32_t value) { return WritePOD(value); }

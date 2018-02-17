@@ -529,6 +529,7 @@ class PLATFORM_EXPORT DrawingBuffer
   // DisallowChromiumImage in the case of OffscreenCanvas.
   ChromiumImageUsage m_chromiumImageUsage;
   bool shouldUseChromiumImage();
+
 };
 
 }  // namespace blink

@@ -30,6 +30,8 @@
 #include "ui/gl/gl_visual_picker_glx.h"
 #endif
 
+#include "base/prints.h"
+
 namespace {
 
 scoped_refptr<gl::GLSurface> InitializeGLSurface() {

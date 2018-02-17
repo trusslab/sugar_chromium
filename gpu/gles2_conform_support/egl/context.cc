@@ -21,6 +21,8 @@
 #include "gpu/gles2_conform_support/egl/thread_state.h"
 #include "ui/gl/init/gl_factory.h"
 
+#include "base/prints.h"
+
 // The slight complexification in this file comes from following properties:
 // 1) Command buffer connection (context) can not be established without a
 // GLSurface. EGL Context can be created independent of a surface.  This is why

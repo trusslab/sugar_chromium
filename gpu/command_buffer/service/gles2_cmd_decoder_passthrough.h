@@ -135,6 +135,17 @@ class GLES2DecoderPassthroughImpl : public GLES2Decoder {
   void SetFenceSyncReleaseCallback(
       const FenceSyncReleaseCallback& callback) override;
   void SetWaitFenceSyncCallback(const WaitFenceSyncCallback& callback) override;
+  void SetCreateTextureSyncCallback(
+      const CreateTextureSyncCallback& callback) override;
+  void SetRemoveTextureSyncCallback(
+      const RemoveTextureSyncCallback& callback) override;
+  void SetProduceTextureDirectSyncCallback(
+      const ProduceTextureDirectSyncCallback& callback) override;
+  void ProduceTextureRefSync(const char* func_name,
+                             bool clear,
+                             gles2::TextureRef* texture_ref,
+                             uint32_t target,
+                             Mailbox mailbox) override;
   void SetDescheduleUntilFinishedCallback(
       const NoParamCallback& callback) override;
   void SetRescheduleAfterFinishedCallback(

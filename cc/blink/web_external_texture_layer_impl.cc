@@ -7,12 +7,16 @@
 #include "cc/blink/web_layer_impl.h"
 #include "cc/layers/texture_layer.h"
 
+#include "gpu/command_buffer/service/mailbox_manager_webgl_impl.h"
+#include "gpu/command_buffer/common/transferable_texture.h"
+#include "gpu/command_buffer/service/texture_manager.h"
 using cc::TextureLayer;
 
 namespace cc_blink {
 
 WebExternalTextureLayerImpl::WebExternalTextureLayerImpl(
-    cc::TextureLayerClient* client) {
+    cc::TextureLayerClient* client) 
+     :kTenMs(base::TimeDelta::FromMilliseconds(10)) {
   scoped_refptr<TextureLayer> layer = TextureLayer::CreateForMailbox(client);
   layer->SetIsDrawable(true);
   layer_.reset(new WebLayerImpl(layer));
@@ -49,5 +53,6 @@ void WebExternalTextureLayerImpl::setNearestNeighbor(bool nearest_neighbor) {
   static_cast<TextureLayer*>(layer_->layer())
       ->SetNearestNeighbor(nearest_neighbor);
 }
+
 
 }  // namespace cc_blink

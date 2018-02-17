@@ -19,6 +19,7 @@
 #include "base/sequence_checker.h"
 #include "base/single_thread_task_runner.h"
 
+
 namespace gpu {
 
 namespace {
@@ -34,8 +35,15 @@ void RunOnThread(scoped_refptr<base::SingleThreadTaskRunner> task_runner,
 
 }  // namespace
 
+SyncPointOrderData::SyncPointOrderData(bool webgl) 
+                                      : webgl_(webgl) {}
+
 scoped_refptr<SyncPointOrderData> SyncPointOrderData::Create() {
   return new SyncPointOrderData;
+}
+
+scoped_refptr<SyncPointOrderData> SyncPointOrderData::Create(bool webgl) {
+  return new SyncPointOrderData(webgl);
 }
 
 void SyncPointOrderData::Destroy() {
@@ -387,6 +395,7 @@ SyncPointClient::SyncPointClient(SyncPointManager* sync_point_manager,
 SyncPointManager::SyncPointManager(bool allow_threaded_wait) {
   global_order_num_.GetNext();
 }
+
 
 SyncPointManager::~SyncPointManager() {
   for (const ClientMap& client_map : client_maps_) {

@@ -21,6 +21,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
+#include "base/prints.h"
 
 #if defined(OS_WIN)
 #include <windows.h>
@@ -111,7 +112,6 @@ void GpuWatchdogThread::CheckArmed() {
 }
 
 void GpuWatchdogThread::ReportProgress() {
-  CheckArmed();
 }
 
 void GpuWatchdogThread::Init() {

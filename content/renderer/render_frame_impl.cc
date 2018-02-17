@@ -282,6 +282,8 @@
 #include "media/remoting/sink_availability_observer.h"    // nogncheck
 #endif
 
+#include "base/prints.h"
+
 using base::Time;
 using base::TimeDelta;
 using blink::WebCachePolicy;

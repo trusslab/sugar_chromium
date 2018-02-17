@@ -179,6 +179,77 @@ ContextProviderCommandBuffer::ContextProviderCommandBuffer(
   context_thread_checker_.DetachFromThread();
 }
 
+ContextProviderCommandBuffer::ContextProviderCommandBuffer(
+    scoped_refptr<gpu::GpuThreadHost> channel,
+    int32_t stream_id,
+    gpu::GpuStreamPriority stream_priority,
+    gpu::SurfaceHandle surface_handle,
+    const GURL& active_url,
+    bool automatic_flushes,
+    bool support_locking,
+    const gpu::SharedMemoryLimits& memory_limits,
+    const gpu::gles2::ContextCreationAttribHelper& attributes,
+    ContextProviderCommandBuffer* shared_context_provider,
+    command_buffer_metrics::ContextType type,
+	scoped_refptr<base::SingleThreadTaskRunner> gpu_thread_task_runner,
+    scoped_refptr<gpu::GpuChannelHost> compositor_channel,
+	int32_t compositor_route_id,
+	gpu::gles2::GLES2Implementation* compositor_gles2_impl)
+    : stream_id_(stream_id),
+      stream_priority_(stream_priority),
+      surface_handle_(surface_handle),
+      active_url_(active_url),
+      automatic_flushes_(automatic_flushes),
+      support_locking_(support_locking),
+      memory_limits_(memory_limits),
+      attributes_(attributes),
+      context_type_(type),
+      shared_providers_(shared_context_provider
+                            ? shared_context_provider->shared_providers_
+                            : new SharedProviders),
+	  gpu_thread_task_runner_(gpu_thread_task_runner),
+      gpu_thread_host_(std::move(channel)),
+	  compositor_channel_(compositor_channel),
+	  compositor_route_id_(compositor_route_id),
+	  compositor_gles2_impl_(compositor_gles2_impl),
+	  webgl_(true) { 
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(gpu_thread_host_);
+  context_thread_checker_.DetachFromThread();
+}
+
+ContextProviderCommandBuffer::ContextProviderCommandBuffer(
+    scoped_refptr<gpu::GpuChannelHost> channel,
+    int32_t stream_id,
+    gpu::GpuStreamPriority stream_priority,
+    gpu::SurfaceHandle surface_handle,
+    const GURL& active_url,
+    bool automatic_flushes,
+    bool support_locking,
+    const gpu::SharedMemoryLimits& memory_limits,
+    const gpu::gles2::ContextCreationAttribHelper& attributes,
+    ContextProviderCommandBuffer* shared_context_provider,
+    command_buffer_metrics::ContextType type,
+	bool render_compositor)
+    : stream_id_(stream_id),
+      stream_priority_(stream_priority),
+      surface_handle_(surface_handle),
+      active_url_(active_url),
+      automatic_flushes_(automatic_flushes),
+      support_locking_(support_locking),
+      memory_limits_(memory_limits),
+      attributes_(attributes),
+      context_type_(type),
+      shared_providers_(shared_context_provider
+                            ? shared_context_provider->shared_providers_
+                            : new SharedProviders),
+      channel_(std::move(channel)),
+	  render_compositor_(render_compositor) {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK(channel_);
+  context_thread_checker_.DetachFromThread();
+}
+
 ContextProviderCommandBuffer::~ContextProviderCommandBuffer() {
   DCHECK(main_thread_checker_.CalledOnValidThread() ||
          context_thread_checker_.CalledOnValidThread());
@@ -255,17 +326,32 @@ bool ContextProviderCommandBuffer::BindToCurrentThread() {
 
     // This command buffer is a client-side proxy to the command buffer in the
     // GPU process.
-    command_buffer_ = gpu::CommandBufferProxyImpl::Create(
-        std::move(channel_), surface_handle_, shared_command_buffer, stream_id_,
-        stream_priority_, attributes_, active_url_, task_runner);
-    if (!command_buffer_) {
+	if (webgl_) {
+	  fprintf(stderr, "webgl_ true in: %s\n", __PRETTY_FUNCTION__);
+	  DCHECK (compositor_channel_);
+      command_buffer_ = gpu::CommandBufferProxyImpl::CreateForWebgl(
+          gpu_thread_host_, surface_handle_, shared_command_buffer, stream_id_,
+          stream_priority_, attributes_, active_url_, task_runner, 
+		  gpu_thread_task_runner_, compositor_channel_, compositor_route_id_);
+      gpu_thread_host_->SetCommandBufferProxy(command_buffer_.get());
+    } else if (render_compositor_) {
+	  fprintf(stderr, "render_compositor_ true in: %s\n", __PRETTY_FUNCTION__);
+      command_buffer_ = gpu::CommandBufferProxyImpl::CreateForRenderCompositor(
+          std::move(channel_), surface_handle_, shared_command_buffer, stream_id_,
+          stream_priority_, attributes_, active_url_, task_runner);
+	} else {
+      command_buffer_ = gpu::CommandBufferProxyImpl::Create(
+          std::move(channel_), surface_handle_, shared_command_buffer, stream_id_,
+          stream_priority_, attributes_, active_url_, task_runner);
+    }
+	if (!command_buffer_) {
       DLOG(ERROR) << "GpuChannelHost failed to create command buffer.";
       command_buffer_metrics::UmaRecordContextInitFailed(context_type_);
       return false;
     }
 
     // The GLES2 helper writes the command buffer protocol.
-    gles2_helper_.reset(new gpu::gles2::GLES2CmdHelper(command_buffer_.get()));
+    gles2_helper_.reset(new gpu::gles2::GLES2CmdHelper(command_buffer_.get(), webgl_));
     gles2_helper_->SetAutomaticFlushes(automatic_flushes_);
     if (!gles2_helper_->Initialize(memory_limits_.command_buffer_size)) {
       DLOG(ERROR) << "Failed to initialize GLES2CmdHelper.";
@@ -279,11 +365,23 @@ bool ContextProviderCommandBuffer::BindToCurrentThread() {
     // The GLES2Implementation exposes the OpenGLES2 API, as well as the
     // gpu::ContextSupport interface.
     constexpr bool support_client_side_arrays = false;
-    gles2_impl_.reset(new gpu::gles2::GLES2Implementation(
-        gles2_helper_.get(), share_group, transfer_buffer_.get(),
-        attributes_.bind_generates_resource,
-        attributes_.lose_context_when_out_of_memory, support_client_side_arrays,
-        command_buffer_.get()));
+	if (webgl_) {
+      gles2_impl_.reset(new gpu::gles2::GLES2Implementation(
+          gles2_helper_.get(), share_group, transfer_buffer_.get(),
+          attributes_.bind_generates_resource,
+          attributes_.lose_context_when_out_of_memory, 
+	  	  support_client_side_arrays,
+          command_buffer_.get(), 
+	  	  webgl_,
+		  compositor_gles2_impl_));
+	} else {
+      gles2_impl_.reset(new gpu::gles2::GLES2Implementation(
+          gles2_helper_.get(), share_group, transfer_buffer_.get(),
+          attributes_.bind_generates_resource,
+          attributes_.lose_context_when_out_of_memory, 
+          support_client_side_arrays,
+          command_buffer_.get())); 
+	}
     if (!gles2_impl_->Initialize(memory_limits_.start_transfer_buffer_size,
                                  memory_limits_.min_transfer_buffer_size,
                                  memory_limits_.max_transfer_buffer_size,
@@ -355,6 +453,7 @@ bool ContextProviderCommandBuffer::BindToCurrentThread() {
       this, "ContextProviderCommandBuffer", std::move(task_runner));
   return true;
 }
+
 
 void ContextProviderCommandBuffer::DetachFromThread() {
   context_thread_checker_.DetachFromThread();
@@ -463,5 +562,10 @@ bool ContextProviderCommandBuffer::OnMemoryDump(
   }
   return true;
 }
+
+
+  scoped_refptr<gpu::GpuChannelHost> ContextProviderCommandBuffer::channel() {
+    return channel_;
+  }
 
 }  // namespace ui

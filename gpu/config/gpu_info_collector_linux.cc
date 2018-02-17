@@ -31,6 +31,8 @@
 #include "library_loaders/libpci.h"  // nogncheck
 #endif
 
+#include "base/prints.h"
+
 namespace gpu {
 
 namespace {
@@ -185,6 +187,7 @@ CollectInfoResult CollectContextGraphicsInfo(GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
   TRACE_EVENT0("gpu", "gpu_info_collector::CollectGraphicsInfo");
+
 
   CollectInfoResult result = CollectGraphicsInfoGL(gpu_info);
   gpu_info->context_info_state = result;

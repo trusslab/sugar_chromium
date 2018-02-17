@@ -10,6 +10,7 @@
 
 #include "base/logging.h"
 #include "base/trace_event/trace_event.h"
+#include "base/prints.h"
 
 namespace gpu {
 

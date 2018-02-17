@@ -13,7 +13,7 @@
 #include "base/trace_event/trace_event.h"
 #include "ui/events/ozone/device/device_event.h"
 #include "ui/events/ozone/device/device_event_observer.h"
-
+#include "base/message_loop/message_loop.h"
 namespace ui {
 
 namespace {
@@ -95,8 +95,6 @@ void DeviceManagerUdev::CreateMonitor() {
   if (monitor_) {
     int fd = device::udev_monitor_get_fd(monitor_.get());
     CHECK_GT(fd, 0);
-    base::MessageLoopForUI::current()->WatchFileDescriptor(
-        fd, true, base::MessagePumpLibevent::WATCH_READ, &controller_, this);
   }
 }
 

@@ -4,17 +4,17 @@
 
 #include <stdint.h>
 
-#include "gpu/command_buffer/common/mailbox_holder.h"
-
+#include "mailbox_holder.h"
 namespace gpu {
 
-MailboxHolder::MailboxHolder() : texture_target(0) {}
+MailboxHolder::MailboxHolder() : /*texture(NULL), egl_image(NULL), */texture_target(0){}
 
 MailboxHolder::MailboxHolder(const gpu::Mailbox& mailbox,
                              const gpu::SyncToken& sync_token,
                              uint32_t texture_target)
-    : mailbox(mailbox),
+     :/*texture(NULL), 
+      egl_image(NULL),*/
+      mailbox(mailbox),
       sync_token(sync_token),
       texture_target(texture_target) {}
-
 }  // namespace gpu

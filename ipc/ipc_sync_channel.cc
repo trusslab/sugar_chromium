@@ -111,7 +111,7 @@ class SyncChannel::ReceivedSyncMsgQueue :
 
   // Called on IPC thread when a synchronous message or reply arrives.
   void QueueMessage(const Message& msg, SyncChannel::SyncContext* context) {
-    bool was_task_pending;
+	bool was_task_pending;
     {
       base::AutoLock auto_lock(message_lock_);
 
@@ -326,6 +326,17 @@ SyncChannel::SyncContext::SyncContext(
       restrict_dispatch_group_(kRestrictDispatchGroup_None) {
 }
 
+SyncChannel::SyncContext::SyncContext(
+    bool webgl,
+	Listener* listener,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+    WaitableEvent* shutdown_event)
+    : ChannelProxy::Context(webgl, listener, ipc_task_runner),
+      received_sync_msgs_(ReceivedSyncMsgQueue::AddContext()),
+      shutdown_event_(shutdown_event),
+      restrict_dispatch_group_(kRestrictDispatchGroup_None) {
+}
+
 SyncChannel::SyncContext::~SyncContext() {
   while (!deserializers_.empty())
     Pop();
@@ -520,6 +531,15 @@ std::unique_ptr<SyncChannel> SyncChannel::Create(
       new SyncChannel(listener, ipc_task_runner, shutdown_event));
 }
 
+std::unique_ptr<SyncChannel> SyncChannel::Create(
+    bool webgl,
+	Listener* listener,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+    WaitableEvent* shutdown_event) {
+  return base::WrapUnique(
+      new SyncChannel(webgl, listener, ipc_task_runner, shutdown_event));
+}
+
 SyncChannel::SyncChannel(
     Listener* listener,
     const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
@@ -529,6 +549,18 @@ SyncChannel::SyncChannel(
       dispatch_watcher_(FROM_HERE) {
   // The current (listener) thread must be distinct from the IPC thread, or else
   // sending synchronous messages will deadlock.
+  DCHECK_NE(ipc_task_runner.get(), base::ThreadTaskRunnerHandle::Get().get());
+  StartWatching();
+}
+
+SyncChannel::SyncChannel(
+    bool webgl,
+	Listener* listener,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+    WaitableEvent* shutdown_event)
+    : ChannelProxy(webgl, new SyncContext(webgl, listener, ipc_task_runner, shutdown_event)),
+      sync_handle_registry_(mojo::SyncHandleRegistry::current()),
+      dispatch_watcher_(FROM_HERE) {
   DCHECK_NE(ipc_task_runner.get(), base::ThreadTaskRunnerHandle::Get().get());
   StartWatching();
 }
@@ -580,6 +612,43 @@ bool SyncChannel::Send(Message* message) {
 
   // Wait for reply, or for any other incoming synchronous messages.
   // |this| might get deleted, so only call static functions at this point.
+  scoped_refptr<mojo::SyncHandleRegistry> registry = sync_handle_registry_;
+  WaitForReply(registry.get(), context.get(), pump_messages);
+
+  TRACE_EVENT_FLOW_END0(TRACE_DISABLED_BY_DEFAULT("ipc.flow"),
+                        "SyncChannel::Send", context->GetSendDoneEvent());
+
+  return context->Pop();
+}
+
+bool SyncChannel::Send(Message* message, bool webgl) {
+#ifdef IPC_MESSAGE_LOG_ENABLED
+  std::string name;
+  Logging::GetInstance()->GetMessageText(
+      message->type(), &name, message, nullptr);
+  TRACE_EVENT1("ipc", "SyncChannel::Send", "name", name);
+#else
+  TRACE_EVENT2("ipc", "SyncChannel::Send",
+               "class", IPC_MESSAGE_ID_CLASS(message->type()),
+               "line", IPC_MESSAGE_ID_LINE(message->type()));
+#endif
+  if (!message->is_sync()) {
+    ChannelProxy::Send(message, webgl);
+    return true;
+  }
+
+  SyncMessage* sync_msg = static_cast<SyncMessage*>(message);
+  bool pump_messages = sync_msg->ShouldPumpMessages();
+
+  scoped_refptr<SyncContext> context(sync_context());
+  if (!context->Push(sync_msg)) {
+    DVLOG(1) << "Channel is shutting down. Dropping sync message.";
+    delete message;
+    return false;
+  }
+
+  ChannelProxy::Send(message, webgl);
+
   scoped_refptr<mojo::SyncHandleRegistry> registry = sync_handle_registry_;
   WaitForReply(registry.get(), context.get(), pump_messages);
 

@@ -362,7 +362,6 @@ bool ParamTraits<signed char>::Read(const base::Pickle* m,
   memcpy(r, data, sizeof(param_type));
   return true;
 }
-
 void ParamTraits<signed char>::Log(const param_type& p, std::string* l) {
   l->append(base::IntToString(p));
 }

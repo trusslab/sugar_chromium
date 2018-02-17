@@ -11,6 +11,8 @@
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "gpu/gpu_export.h"
+#include "gpu/command_buffer/common/transferable_texture.h"
+#include "gpu/ipc/common/gpu_command_buffer_traits.h"
 
 namespace gpu {
 
@@ -26,7 +28,6 @@ struct GPU_EXPORT MailboxHolder {
   MailboxHolder(const gpu::Mailbox& mailbox,
                 const gpu::SyncToken& sync_token,
                 uint32_t texture_target);
-
   gpu::Mailbox mailbox;
   gpu::SyncToken sync_token;
   uint32_t texture_target;

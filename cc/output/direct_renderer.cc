@@ -24,7 +24,6 @@
 #include "ui/gfx/geometry/quad_f.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/transform.h"
-
 static gfx::Transform OrthoProjectionMatrix(float left,
                                             float right,
                                             float bottom,
@@ -327,6 +326,7 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
       if (overlay.use_output_surface_for_resource) {
         BindFramebufferToOutputSurface();
         break;
+
       }
     }
   } else {

@@ -107,6 +107,10 @@ base::TimeDelta BeginFrameArgs::DefaultInterval() {
   return base::TimeDelta::FromMicroseconds(16666);
 }
 
+base::TimeDelta BeginFrameArgs::ZeroInterval() {
+  return base::TimeDelta::FromMicroseconds(0);
+}
+
 BeginFrameAck::BeginFrameAck()
     : sequence_number(BeginFrameArgs::kInvalidFrameNumber),
       latest_confirmed_sequence_number(BeginFrameArgs::kInvalidFrameNumber),

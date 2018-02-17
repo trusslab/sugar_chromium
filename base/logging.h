@@ -1136,4 +1136,6 @@ inline std::ostream& operator<<(std::ostream& out, const std::wstring& wstr) {
 EAT_STREAM_PARAMETERS
 #endif
 
+#define PRINTF0(fmt, args...) fprintf(stderr, "%s " fmt, __func__, ##args)
+
 #endif  // BASE_LOGGING_H_

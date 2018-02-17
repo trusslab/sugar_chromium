@@ -74,8 +74,7 @@ class CONTENT_EXPORT ChildThreadImpl
   ChildThreadImpl();
   // Allow to be used for single-process mode and for in process gpu mode via
   // options.
-  explicit ChildThreadImpl(const Options& options);
-  // ChildProcess::main_thread() is reset after Shutdown(), and before the
+ explicit ChildThreadImpl(const Options& options);
   // destructor, so any subsystem that relies on ChildProcess::main_thread()
   // must be terminated before Shutdown returns. In particular, if a subsystem
   // has a thread that post tasks to ChildProcess::main_thread(), that thread
@@ -221,7 +220,8 @@ class CONTENT_EXPORT ChildThreadImpl
 
   // We create the channel first without connecting it so we can add filters
   // prior to any messages being received, then connect it afterwards.
-  void ConnectChannel();
+  
+  void ConnectChannel(const Options& options);
 
   // IPC message handlers.
   void OnShutdown();
@@ -318,6 +318,7 @@ struct ChildThreadImpl::Options {
 
   bool auto_start_service_manager_connection;
   bool connect_to_browser;
+  bool webgl = false;
   scoped_refptr<base::SingleThreadTaskRunner> browser_process_io_runner;
   std::vector<IPC::MessageFilter*> startup_filters;
   std::string in_process_service_request_token;

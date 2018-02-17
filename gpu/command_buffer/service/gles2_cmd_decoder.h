@@ -24,6 +24,8 @@
 #include "gpu/command_buffer/service/common_decoder.h"
 #include "gpu/gpu_export.h"
 
+#include "ui/gl/gl_enums.h"
+
 namespace gl {
 class GLContext;
 class GLSurface;
@@ -52,6 +54,8 @@ class TransformFeedbackManager;
 class VertexArrayManager;
 struct ContextCreationAttribHelper;
 struct ContextState;
+
+class TextureRef;
 
 struct DisallowedFeatures {
   DisallowedFeatures() {}
@@ -89,6 +93,9 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
                               gpu::CommandBufferId command_buffer_id,
                               uint64_t release)>
       WaitFenceSyncCallback;
+  typedef base::Callback<void(uint32_t client_id, uint32_t service_id)> CreateTextureSyncCallback;
+  typedef base::Callback<void(uint32_t client_id)> RemoveTextureSyncCallback;
+  typedef base::Callback<void(uint32_t client_id, uint32_t target, const volatile void* data)> ProduceTextureDirectSyncCallback;
   typedef base::Callback<void(void)> NoParamCallback;
 
   // The default stencil mask, which has all bits set.  This really should be a
@@ -98,7 +105,8 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
 
   // Creates a decoder.
   static GLES2Decoder* Create(ContextGroup* group);
-
+  static GLES2Decoder* Create(ContextGroup* group, bool webgl);
+  static GLES2Decoder* CreateForRenderCompositor(ContextGroup* group, int32_t renderer_pid);
   ~GLES2Decoder() override;
 
   bool initialized() const {
@@ -286,6 +294,19 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
       const FenceSyncReleaseCallback& callback) = 0;
   virtual void SetWaitFenceSyncCallback(
       const WaitFenceSyncCallback& callback) = 0;
+
+  virtual void SetCreateTextureSyncCallback(
+      const CreateTextureSyncCallback& callback) = 0;
+  virtual void SetRemoveTextureSyncCallback(
+      const RemoveTextureSyncCallback& callback) = 0;
+  virtual void SetProduceTextureDirectSyncCallback(
+      const ProduceTextureDirectSyncCallback& callback) = 0;
+
+  virtual void ProduceTextureRefSync(const char* func_name,
+                                     bool clear,
+                                     gles2::TextureRef* texture_ref,
+                                     uint32_t target,
+                                     Mailbox mailbox) = 0;
 
   // Sets the callback for the DescheduleUntilFinished and
   // RescheduleAfterFinished calls.

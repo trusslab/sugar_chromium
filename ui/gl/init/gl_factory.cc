@@ -13,11 +13,12 @@
 #include "ui/gl/gl_share_group.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/init/gl_initializer.h"
+#include "base/prints.h"
 
 namespace gl {
 namespace init {
 
-bool InitializeGLOneOff() {
+bool InitializeGLOneOff(bool sugar) {
   TRACE_EVENT0("gpu,startup", "gl::init::InitializeOneOff");
 
   DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
@@ -30,7 +31,12 @@ bool InitializeGLOneOff() {
   // The default implementation is always the first one in list.
   GLImplementation impl = allowed_impls[0];
   bool fallback_to_software_gl = false;
-  if (cmd->HasSwitch(switches::kOverrideUseSoftwareGLForTests)) {
+  if (sugar) {
+    impl = kGLImplementationEGLGLES2Sugar;
+    SetGLImplementation(impl);
+  } else if (1) {
+    impl = kGLImplementationEGLGLES2;
+  } else if (cmd->HasSwitch(switches::kOverrideUseSoftwareGLForTests)) {
     impl = GetSoftwareGLImplementation();
   } else if (cmd->HasSwitch(switches::kUseGL)) {
     std::string requested_implementation_name =
@@ -58,6 +64,10 @@ bool InitializeGLOneOff() {
 
   return InitializeGLOneOffImplementation(
       impl, fallback_to_software_gl, gpu_service_logging, disable_gl_drawing);
+}
+
+bool InitializeGLOneOff() {
+  return InitializeGLOneOff(false);
 }
 
 bool InitializeGLOneOffImplementation(GLImplementation impl,

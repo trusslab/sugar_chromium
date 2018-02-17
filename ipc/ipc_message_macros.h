@@ -233,6 +233,7 @@
 // Message macros collect arguments and funnel them into the common message
 // generation macro.  These should never be redefined.
 
+
 // Asynchronous messages have only in parameters and are declared like:
 //     IPC_MESSAGE_CONTROL(FooMsg, int, float)
 #define IPC_MESSAGE_CONTROL(msg_class, ...) \
@@ -266,6 +267,7 @@
       IPC::MessageT<msg_name##_Meta>;                               \
   using msg_name = IPC::MessageT<msg_name##_Meta>;                  \
   IPC_MESSAGE_EXTRA(msg_name)
+
 
 #if defined(IPC_MESSAGE_IMPL)
 

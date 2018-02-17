@@ -25,6 +25,8 @@
 #include "media/video/video_encode_accelerator.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
 
+#include "base/prints.h"
+
 namespace content {
 
 namespace {

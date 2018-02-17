@@ -18,6 +18,9 @@
 #include "gpu/ipc/service/gpu_channel_manager.h"
 #include "gpu/ipc/service/gpu_channel_manager_delegate.h"
 #include "gpu/ipc/service/gpu_memory_tracking.h"
+#include "gpu/itc/service/gpu_thread_channel_manager.h"
+
+#include "base/prints.h"
 
 namespace gpu {
 namespace {
@@ -34,6 +37,12 @@ void TrackValueChanged(uint64_t old_size,
 GpuMemoryManager::GpuMemoryManager(GpuChannelManager* channel_manager)
     : channel_manager_(channel_manager),
       bytes_allocated_current_(0) {}
+
+GpuMemoryManager::GpuMemoryManager(GpuThreadChannelManager* channel_manager)
+    : thread_channel_manager_(channel_manager),
+      bytes_allocated_current_(0),
+	  webgl_(true) {
+	  }
 
 GpuMemoryManager::~GpuMemoryManager() {
   DCHECK(tracking_groups_.empty());
@@ -65,14 +74,18 @@ GpuMemoryTrackingGroup* GpuMemoryManager::CreateTrackingGroup(
     base::ProcessId pid, gles2::MemoryTracker* memory_tracker) {
   GpuMemoryTrackingGroup* tracking_group = new GpuMemoryTrackingGroup(
       pid, memory_tracker, this);
-  DCHECK(!tracking_groups_.count(tracking_group->GetMemoryTracker()));
-  tracking_groups_.insert(std::make_pair(tracking_group->GetMemoryTracker(),
-                                         tracking_group));
+  if (!webgl_) {
+    DCHECK(!tracking_groups_.count(tracking_group->GetMemoryTracker()));
+    tracking_groups_.insert(std::make_pair(tracking_group->GetMemoryTracker(),
+                                           tracking_group));
+  }				
   return tracking_group;
 }
 
 void GpuMemoryManager::OnDestroyTrackingGroup(
     GpuMemoryTrackingGroup* tracking_group) {
+  if (webgl_)
+    return;
   DCHECK(tracking_groups_.count(tracking_group->GetMemoryTracker()));
   tracking_groups_.erase(tracking_group->GetMemoryTracker());
 }

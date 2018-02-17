@@ -56,6 +56,16 @@
 #include "gpu/ipc/service/stream_texture_android.h"
 #endif
 
+#include "gpu/command_buffer/service/texture_manager.h"
+#include "gpu/ipc/client/gpu_channel_host.h"
+#include "gpu/itc/service/gpu_thread_channel.h"
+#include "gpu/itc/service/gpu_thread_channel_manager.h"
+#include "gpu/itc/service/gpu_thread_channel_manager_delegate.h"
+#include "gpu/itc/client/gpu_thread_host.h"
+#include "base/prints.h"
+#include <sys/syscall.h>
+#include "ui/gl/gl_surface_egl_gbm.h"
+
 // Macro to reduce code duplication when logging memory in
 // GpuCommandBufferMemoryTracker. This is needed as the UMA_HISTOGRAM_* macros
 // require a unique call-site per histogram (you can't funnel multiple strings
@@ -117,6 +127,24 @@ class GpuCommandBufferMemoryTracker : public gles2::MemoryTracker {
         &GpuCommandBufferMemoryTracker::LogMemoryStatsPeriodic);
   }
 
+  explicit GpuCommandBufferMemoryTracker(
+      GpuThreadChannel* channel,
+      uint64_t share_group_tracing_guid,
+      gles2::ContextType context_type,
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner)
+      ://// tracking_group_(
+        client_tracing_id_(channel->client_tracing_id()),
+        client_id_(channel->client_id()),
+        share_group_tracing_guid_(share_group_tracing_guid),
+        context_type_(context_type),
+        memory_pressure_listener_(new base::MemoryPressureListener(
+            base::Bind(&GpuCommandBufferMemoryTracker::LogMemoryStatsPressure,
+                       base::Unretained(this)))) {
+    tracking_group_.reset(channel->gpu_thread_channel_manager()
+                                 ->gpu_memory_manager()
+								 ->CreateTrackingGroup(getpid(), this));
+  }
+
   void TrackMemoryAllocatedChange(
       size_t old_size, size_t new_size) override {
     tracking_group_->TrackMemoryAllocatedChange(
@@ -160,6 +188,7 @@ class GpuCommandBufferMemoryTracker : public gles2::MemoryTracker {
   DISALLOW_COPY_AND_ASSIGN(GpuCommandBufferMemoryTracker);
 };
 
+
 // FastSetActiveURL will shortcut the expensive call to SetActiveURL when the
 // url_hash matches.
 void FastSetActiveURL(const GURL& url, size_t url_hash, GpuChannel* channel) {
@@ -175,6 +204,18 @@ void FastSetActiveURL(const GURL& url, size_t url_hash, GpuChannel* channel) {
     DCHECK(channel && channel->gpu_channel_manager() &&
            channel->gpu_channel_manager()->delegate());
     channel->gpu_channel_manager()->delegate()->SetActiveURL(url);
+  }
+}
+
+void FastSetActiveURLForWebgl(const GURL& url, size_t url_hash, GpuThreadChannel* channel) {
+  if (url.is_empty())
+    return;
+  static size_t g_last_url_hash = 0;
+  if (url_hash != g_last_url_hash) {
+    g_last_url_hash = url_hash;
+	DCHECK(channel && channel->gpu_thread_channel_manager() &&
+           channel->gpu_thread_channel_manager()->delegate());
+    channel->gpu_thread_channel_manager()->delegate()->SetActiveURL(url);
   }
 }
 
@@ -234,6 +275,38 @@ std::unique_ptr<GpuCommandBufferStub> GpuCommandBufferStub::Create(
   return stub;
 }
 
+std::unique_ptr<GpuCommandBufferStub> GpuCommandBufferStub::Create(
+    GpuThreadChannel* channel,
+    GpuCommandBufferStub* share_command_buffer_stub,
+    const GPUCreateCommandBufferConfig& init_params,
+    int32_t route_id,
+	int32_t compositor_route_id,
+    gpu::CommandBufferSharedState* shared_state,
+	scoped_refptr<GpuChannelHost> compositor_channel) {
+  std::unique_ptr<GpuCommandBufferStub> stub(
+      new GpuCommandBufferStub(channel, init_params, route_id, compositor_route_id, compositor_channel));
+  if (!stub->Initialize(share_command_buffer_stub, init_params,
+                        shared_state))
+    return nullptr;
+  return stub;
+}
+
+std::unique_ptr<GpuCommandBufferStub> GpuCommandBufferStub::Create(
+    GpuChannel* channel,
+    GpuCommandBufferStub* share_command_buffer_stub,
+    const GPUCreateCommandBufferConfig& init_params,
+    int32_t route_id,
+    std::unique_ptr<base::SharedMemory> shared_state_shm,
+	bool has_out_process_sync,
+	int32_t renderer_pid) {
+  std::unique_ptr<GpuCommandBufferStub> stub(
+      new GpuCommandBufferStub(channel, init_params, route_id, has_out_process_sync, renderer_pid));
+  if (!stub->Initialize(share_command_buffer_stub, init_params,
+                        std::move(shared_state_shm)))
+    return nullptr;
+  return stub;
+}
+
 GpuCommandBufferStub::GpuCommandBufferStub(
     GpuChannel* channel,
     const GPUCreateCommandBufferConfig& init_params,
@@ -251,12 +324,59 @@ GpuCommandBufferStub::GpuCommandBufferStub(
       active_url_(init_params.active_url),
       active_url_hash_(base::Hash(active_url_.possibly_invalid_spec())) {}
 
+GpuCommandBufferStub::GpuCommandBufferStub(
+    GpuThreadChannel* channel,
+    const GPUCreateCommandBufferConfig& init_params,
+    int32_t route_id,
+    int32_t compositor_route_id,
+	scoped_refptr<GpuChannelHost> compositor_channel)
+    : thread_channel_(channel),
+      initialized_(false),
+      surface_handle_(init_params.surface_handle),
+      use_virtualized_gl_context_(false),
+      stream_id_(init_params.stream_id),
+      route_id_(route_id),
+      compositor_route_id_(compositor_route_id),
+      last_flush_count_(0),
+      waiting_for_sync_point_(false),
+      previous_processed_num_(0),
+      active_url_(init_params.active_url),
+      active_url_hash_(base::Hash(active_url_.possibly_invalid_spec())),
+	  webgl_(true),
+	  compositor_channel_(compositor_channel) {
+	  }
+
+GpuCommandBufferStub::GpuCommandBufferStub(
+    GpuChannel* channel,
+    const GPUCreateCommandBufferConfig& init_params,
+    int32_t route_id,
+	bool has_out_process_sync,
+	int32_t renderer_pid)
+    : channel_(channel),
+      initialized_(false),
+      surface_handle_(init_params.surface_handle),
+      use_virtualized_gl_context_(false),
+      command_buffer_id_(GetCommandBufferID(channel->client_id(), route_id)),
+      stream_id_(init_params.stream_id),
+      route_id_(route_id),
+      last_flush_count_(0),
+      waiting_for_sync_point_(false),
+      previous_processed_num_(0),
+      active_url_(init_params.active_url),
+      active_url_hash_(base::Hash(active_url_.possibly_invalid_spec())),
+	  has_out_process_sync_(has_out_process_sync),
+	  renderer_pid_(renderer_pid) {
+	  }
+
 GpuCommandBufferStub::~GpuCommandBufferStub() {
-  Destroy();
+Destroy();
 }
 
 GpuMemoryManager* GpuCommandBufferStub::GetMemoryManager() const {
-    return channel()->gpu_channel_manager()->gpu_memory_manager();
+	if (webgl_)
+	  return thread_channel_->gpu_thread_channel_manager()->gpu_memory_manager();
+	else
+      return channel()->gpu_channel_manager()->gpu_memory_manager();
 }
 
 bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
@@ -310,6 +430,18 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_DestroyImage, OnDestroyImage);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_CreateStreamTexture,
                         OnCreateStreamTexture)
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_InsertFenceSyncByToken,
+                        OnInsertFenceSyncByToken)
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_CreateOutProcessSyncPointClient,
+	                    OnCreateOutProcessSyncPointClient);
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_OutProcessWaitFenceSync,
+	                    OnOutProcessWaitFenceSync);
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_CreateTextureSync,
+	                    OnCreateTextureSync);
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_RemoveTextureSync,
+	                    OnRemoveTextureSync);
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_ProduceTextureDirectSync,
+	                    OnProduceTextureDirectSync);
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -327,6 +459,9 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
 }
 
 bool GpuCommandBufferStub::Send(IPC::Message* message) {
+  if (webgl_) {
+	return true;
+  }
   return channel_->Send(message);
 }
 
@@ -334,9 +469,15 @@ bool GpuCommandBufferStub::Send(IPC::Message* message) {
 void GpuCommandBufferStub::DidCreateAcceleratedSurfaceChildWindow(
     SurfaceHandle parent_window,
     SurfaceHandle child_window) {
-  GpuChannelManager* gpu_channel_manager = channel_->gpu_channel_manager();
-  gpu_channel_manager->delegate()->SendAcceleratedSurfaceCreatedChildWindow(
-      parent_window, child_window);
+  if (webgl_) {
+    GpuThreadChannelManager* gpu_thread_channel_manager = thread_channel_->gpu_thread_channel_manager();
+    gpu_thread_channel_manager->delegate()->SendAcceleratedSurfaceCreatedChildWindow(
+        parent_window, child_window);
+  } else {
+    GpuChannelManager* gpu_channel_manager = channel_->gpu_channel_manager();
+    gpu_channel_manager->delegate()->SendAcceleratedSurfaceCreatedChildWindow(
+        parent_window, child_window);
+  }
 }
 #endif
 
@@ -356,7 +497,14 @@ void GpuCommandBufferStub::DidSwapBuffersComplete(
 #endif
   send_params.latency_info = std::move(params.latency_info);
   send_params.result = params.result;
-  Send(new GpuCommandBufferMsg_SwapBuffersCompleted(route_id_, send_params));
+  if (webgl_) {
+    thread_channel_->render_task_runner()->PostTask(FROM_HERE, base::Bind(
+	                                &GpuThreadHost::OnSwapBuffersCompleted,
+									thread_channel_->GetGpuThreadHost(),
+									send_params));
+  } else {
+    Send(new GpuCommandBufferMsg_SwapBuffersCompleted(route_id_, send_params));
+  }
 }
 
 const gles2::FeatureInfo* GpuCommandBufferStub::GetFeatureInfo() const {
@@ -370,8 +518,16 @@ void GpuCommandBufferStub::SetLatencyInfoCallback(
 
 void GpuCommandBufferStub::UpdateVSyncParameters(base::TimeTicks timebase,
                                                  base::TimeDelta interval) {
-  Send(new GpuCommandBufferMsg_UpdateVSyncParameters(route_id_, timebase,
-                                                     interval));
+  if (webgl_) {
+    thread_channel_->render_task_runner()->PostTask(FROM_HERE, base::Bind(
+	                                &GpuThreadHost::OnUpdateVSyncParameters,
+									thread_channel_->GetGpuThreadHost(),
+									timebase,
+									interval));
+  } else {
+    Send(new GpuCommandBufferMsg_UpdateVSyncParameters(route_id_, timebase,
+                                                       interval));
+  }													 
 }
 
 void GpuCommandBufferStub::AddFilter(IPC::MessageFilter* message_filter) {
@@ -509,15 +665,20 @@ void GpuCommandBufferStub::Destroy() {
   }
 
   if (initialized_) {
-    GpuChannelManager* gpu_channel_manager = channel_->gpu_channel_manager();
-    // If we are currently shutting down the GPU process to help with recovery
-    // (exit_on_context_lost workaround), then don't tell the browser about
-    // offscreen context destruction here since it's not client-invoked, and
-    // might bypass the 3D API blocking logic.
-    if ((surface_handle_ == gpu::kNullSurfaceHandle) && !active_url_.is_empty()
-        && !gpu_channel_manager->is_exiting_for_lost_context()) {
-      gpu_channel_manager->delegate()->DidDestroyOffscreenContext(active_url_);
-    }
+	if (!webgl_) {
+      GpuChannelManager* gpu_channel_manager = channel_->gpu_channel_manager();
+      if ((surface_handle_ == gpu::kNullSurfaceHandle) && !active_url_.is_empty()
+          && !gpu_channel_manager->is_exiting_for_lost_context()) {
+        gpu_channel_manager->delegate()->DidDestroyOffscreenContext(active_url_);
+      }
+	} else {
+      GpuThreadChannelManager* thread_channel_manager = thread_channel_->gpu_thread_channel_manager();
+      if ((surface_handle_ == gpu::kNullSurfaceHandle) && !active_url_.is_empty()
+          && !thread_channel_manager->is_exiting_for_lost_context()) {
+        thread_channel_manager->delegate()->DidDestroyOffscreenContext(active_url_);
+      }
+
+	}
   }
 
   if (decoder_)
@@ -559,6 +720,7 @@ bool GpuCommandBufferStub::Initialize(
     std::unique_ptr<base::SharedMemory> shared_state_shm) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::Initialize");
   FastSetActiveURL(active_url_, active_url_hash_, channel_);
+
 
   GpuChannelManager* manager = channel_->gpu_channel_manager();
   DCHECK(manager);
@@ -639,7 +801,10 @@ bool GpuCommandBufferStub::Initialize(
   command_buffer_.reset(new CommandBufferService(
       context_group_->transfer_buffer_manager()));
 
-  decoder_.reset(gles2::GLES2Decoder::Create(context_group_.get()));
+  if(has_out_process_sync_)
+    decoder_.reset(gles2::GLES2Decoder::CreateForRenderCompositor(context_group_.get(), renderer_pid_));
+  else
+    decoder_.reset(gles2::GLES2Decoder::Create(context_group_.get()));
   executor_.reset(new CommandExecutor(command_buffer_.get(), decoder_.get(),
                                       decoder_.get()));
   sync_point_client_ = channel_->sync_point_manager()->CreateSyncPointClient(
@@ -819,6 +984,240 @@ bool GpuCommandBufferStub::Initialize(
   return true;
 }
 
+bool GpuCommandBufferStub::Initialize(
+    GpuCommandBufferStub* share_command_buffer_stub,
+    const GPUCreateCommandBufferConfig& init_params,
+    gpu::CommandBufferSharedState* shared_state) {
+  TRACE_EVENT0("gpu", "GpuCommandBufferStub::Initialize");
+
+  GpuThreadChannelManager* manager = thread_channel_->gpu_thread_channel_manager();
+  DCHECK(manager);
+  manager->PrintPtr();
+
+  if (share_command_buffer_stub) {
+    context_group_ = share_command_buffer_stub->context_group_;
+    DCHECK(context_group_->bind_generates_resource() ==
+           init_params.attribs.bind_generates_resource);
+  } else {
+    scoped_refptr<gles2::FeatureInfo> feature_info =
+        new gles2::FeatureInfo(manager->gpu_driver_bug_workarounds());
+    gpu::GpuMemoryBufferFactory* gmb_factory =
+        thread_channel_->gpu_thread_channel_manager()->gpu_memory_buffer_factory();
+    context_group_ = new gles2::ContextGroup(
+        manager->gpu_preferences(), thread_channel_->mailbox_manager(),
+        new GpuCommandBufferMemoryTracker(
+            thread_channel_, command_buffer_id_.GetUnsafeValue(),
+            init_params.attribs.context_type, base::ThreadTaskRunnerHandle::Get().get()),
+        manager->shader_translator_cache(),
+        manager->framebuffer_completeness_cache(), feature_info,
+        init_params.attribs.bind_generates_resource,
+        gmb_factory ? gmb_factory->AsImageFactory() : nullptr,
+        thread_channel_->watchdog() /* progress_reporter */,
+        manager->gpu_feature_info());
+  }
+
+#if defined(OS_MACOSX)
+  if (init_params.attribs.gpu_preference == gl::PreferIntegratedGpu)
+    use_virtualized_gl_context_ = true;
+#endif
+
+  use_virtualized_gl_context_ |=
+      context_group_->feature_info()->workarounds().use_virtualized_gl_contexts;
+
+  use_virtualized_gl_context_ |= thread_channel_->mailbox_manager()->UsesSync();
+
+  bool offscreen = (surface_handle_ == kNullSurfaceHandle);
+  gl::GLSurface* default_surface = manager->GetDefaultOffscreenSurface();
+  if (!default_surface) {
+    DLOG(ERROR) << "Failed to create default offscreen surface.";
+    return false;
+  }
+  gl::GLSurfaceFormat surface_format =
+      offscreen ? default_surface->GetFormat() : gl::GLSurfaceFormat();
+#if defined(OS_ANDROID)
+  if (init_params.attribs.red_size <= 5 &&
+      init_params.attribs.green_size <= 6 &&
+      init_params.attribs.blue_size <= 5 &&
+      init_params.attribs.alpha_size == 0) {
+    surface_format.SetRGB565();
+    DVLOG(1) << __FUNCTION__ << ": Choosing RGB565 mode.";
+  }
+
+  if (!surface_format.IsCompatible(default_surface->GetFormat()) && !offscreen)
+    use_virtualized_gl_context_ = false;
+#endif
+
+  command_buffer_.reset(new CommandBufferService(
+      context_group_->transfer_buffer_manager()));
+
+  decoder_.reset(gles2::GLES2Decoder::Create(context_group_.get(), true));
+  executor_.reset(new CommandExecutor(command_buffer_.get(), decoder_.get(),
+                                      decoder_.get()));
+  DCHECK(compositor_channel_);
+  compositor_channel_->Send(new GpuCommandBufferMsg_CreateOutProcessSyncPointClient(
+               compositor_route_id_,
+			   CommandBufferNamespace::GPU_IO, command_buffer_id_));
+
+  executor_->SetPreemptByFlag(thread_channel_->preempted_flag());
+
+  decoder_->set_engine(executor_.get());
+
+  if (offscreen) {
+    if (init_params.attribs.depth_size > 0) {
+      surface_format.SetDepthBits(init_params.attribs.depth_size);
+    }
+    if (init_params.attribs.samples > 0) {
+      surface_format.SetSamples(init_params.attribs.samples);
+    }
+    if (init_params.attribs.stencil_size > 0) {
+      surface_format.SetStencilBits(init_params.attribs.stencil_size);
+    }
+    if (!surface_format.IsCompatible(default_surface->GetFormat())) {
+      DVLOG(1) << __FUNCTION__ << ": Hit the OwnOffscreenSurface path";
+      use_virtualized_gl_context_ = false;
+      surface_ = gl::init::CreateOffscreenGLSurfaceWithFormat(gfx::Size(),
+                                                              surface_format);
+      if (!surface_) {
+        DLOG(ERROR) << "Failed to create surface.";
+        return false;
+      }
+    } else {
+      surface_ = default_surface;
+    }
+  } else {
+    surface_ = ImageTransportSurface::CreateNativeSurface(
+        AsWeakPtr(), surface_handle_, surface_format);
+    if (!surface_ || !surface_->Initialize(surface_format)) {
+      surface_ = nullptr;
+      DLOG(ERROR) << "Failed to create surface.";
+      return false;
+    }
+  }
+
+  if (context_group_->gpu_preferences().use_passthrough_cmd_decoder) {
+    if (share_command_buffer_stub) {
+      share_group_ = share_command_buffer_stub->share_group_;
+    } else {
+      share_group_ = new gl::GLShareGroup();
+    }
+  } else {
+    share_group_ = thread_channel_->share_group();
+  }
+
+  scoped_refptr<gl::GLContext> context;
+  if (use_virtualized_gl_context_ && share_group_) {
+    context = share_group_->GetSharedContext(surface_.get());
+    if (!context.get()) {
+      context = gl::init::CreateGLContext(
+          share_group_.get(), surface_.get(),
+          GenerateGLContextAttribs(init_params.attribs,
+                                   context_group_->gpu_preferences()));
+      if (!context.get()) {
+        DLOG(ERROR) << "Failed to create shared context for virtualization.";
+        return false;
+      }
+      DCHECK(context->share_group() == share_group_.get());
+      share_group_->SetSharedContext(surface_.get(), context.get());
+    }
+    DCHECK(context->GetHandle() ||
+           gl::GetGLImplementation() == gl::kGLImplementationMockGL ||
+           gl::GetGLImplementation() == gl::kGLImplementationStubGL);
+    context = new GLContextVirtual(share_group_.get(), context.get(),
+                                   decoder_->AsWeakPtr());
+    if (!context->Initialize(
+            surface_.get(),
+            GenerateGLContextAttribs(init_params.attribs,
+                                     context_group_->gpu_preferences()))) {
+      context = NULL;
+      DLOG(ERROR) << "Failed to initialize virtual GL context.";
+      return false;
+    }
+  }
+  if (!context.get()) {
+    context = gl::init::CreateGLContext(
+        share_group_.get(), surface_.get(),
+        GenerateGLContextAttribs(init_params.attribs,
+                                 context_group_->gpu_preferences()));
+  }
+  if (!context.get()) {
+    DLOG(ERROR) << "Failed to create context.";
+    return false;
+  }
+
+  if (!context->MakeCurrent(surface_.get())) {
+    LOG(ERROR) << "Failed to make context current.";
+    return false;
+  }
+  gl::NativeViewGLSurfaceEGLGBM::setContext(context->GetHandle());
+
+  if (!context->GetGLStateRestorer()) {
+    context->SetGLStateRestorer(
+        new GLStateRestorerImpl(decoder_->AsWeakPtr()));
+  }
+
+  if (!context_group_->has_program_cache() &&
+      !context_group_->feature_info()->workarounds().disable_program_cache) {
+    context_group_->set_program_cache(manager->program_cache());
+  }
+
+  if (!decoder_->Initialize(surface_, context, offscreen,
+                            gpu::gles2::DisallowedFeatures(),
+                            init_params.attribs)) {
+    DLOG(ERROR) << "Failed to initialize decoder.";
+    return false;
+  }
+
+  if (manager->gpu_preferences().enable_gpu_service_logging) {
+    decoder_->set_log_commands(true);
+  }
+
+  decoder_->GetLogger()->SetMsgCallback(
+      base::Bind(&GpuCommandBufferStub::SendConsoleMessage,
+                 base::Unretained(this)));
+  decoder_->SetShaderCacheCallback(
+      base::Bind(&GpuCommandBufferStub::SendCachedShader,
+                 base::Unretained(this)));
+  decoder_->SetFenceSyncReleaseCallback(base::Bind(
+      &GpuCommandBufferStub::OnFenceSyncRelease, base::Unretained(this)));
+  decoder_->SetWaitFenceSyncCallback(base::Bind(
+      &GpuCommandBufferStub::OnWaitFenceSyncForWebgl, base::Unretained(this)));
+  decoder_->SetDescheduleUntilFinishedCallback(
+      base::Bind(&GpuCommandBufferStub::OnDescheduleUntilFinished,
+                 base::Unretained(this)));
+  decoder_->SetRescheduleAfterFinishedCallback(
+      base::Bind(&GpuCommandBufferStub::OnRescheduleAfterFinished,
+                 base::Unretained(this)));
+  decoder_->SetCreateTextureSyncCallback(
+      base::Bind(&GpuCommandBufferStub::CreateTextureSync,
+	             base::Unretained(this)));
+  decoder_->SetRemoveTextureSyncCallback(
+      base::Bind(&GpuCommandBufferStub::RemoveTextureSync,
+	             base::Unretained(this)));
+  decoder_->SetProduceTextureDirectSyncCallback(
+      base::Bind(&GpuCommandBufferStub::ProduceTextureDirectSync,
+	             base::Unretained(this)));
+
+  command_buffer_->SetPutOffsetChangeCallback(
+      base::Bind(&GpuCommandBufferStub::PutChanged, base::Unretained(this)));
+  command_buffer_->SetGetBufferChangeCallback(base::Bind(
+      &CommandExecutor::SetGetBuffer, base::Unretained(executor_.get())));
+  command_buffer_->SetParseErrorCallback(
+      base::Bind(&GpuCommandBufferStub::OnParseError, base::Unretained(this)));
+
+  if (thread_channel_->watchdog()) {
+    executor_->SetCommandProcessedCallback(base::Bind(
+        &GpuCommandBufferStub::OnCommandProcessed, base::Unretained(this)));
+  }
+
+  command_buffer_->SetSharedStateBuffer(shared_state);
+
+  if (offscreen && !active_url_.is_empty())
+    manager->delegate()->DidCreateOffscreenContext(active_url_);
+
+  initialized_ = true;
+  return true;
+}
+
 void GpuCommandBufferStub::OnCreateStreamTexture(uint32_t texture_id,
                                                  int32_t stream_id,
                                                  bool* succeeded) {
@@ -835,6 +1234,12 @@ void GpuCommandBufferStub::OnSetGetBuffer(int32_t shm_id,
   if (command_buffer_)
     command_buffer_->SetGetBuffer(shm_id);
   Send(reply_message);
+}
+
+void GpuCommandBufferStub::OnSetGetBufferForWebgl(int32_t shm_id) {
+  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnSetGetBuffer");
+  if (command_buffer_)
+    command_buffer_->SetGetBuffer(shm_id);
 }
 
 void GpuCommandBufferStub::OnTakeFrontBuffer(const Mailbox& mailbox) {
@@ -859,16 +1264,30 @@ void GpuCommandBufferStub::OnParseError() {
   IPC::Message* msg = new GpuCommandBufferMsg_Destroyed(
       route_id_, state.context_lost_reason, state.error);
   msg->set_unblock(true);
-  Send(msg);
+  if (webgl_) {
+    thread_channel_->render_task_runner()->PostTask(FROM_HERE, base::Bind(
+	                                &GpuThreadHost::OnDestroyed,
+									thread_channel_->GetGpuThreadHost(),
+									state.context_lost_reason,
+									state.error));
+  } else {
+    Send(msg);
+  }
 
   // Tell the browser about this context loss as well, so it can
   // determine whether client APIs like WebGL need to be immediately
   // blocked from automatically running.
-  GpuChannelManager* gpu_channel_manager = channel_->gpu_channel_manager();
-  gpu_channel_manager->delegate()->DidLoseContext(
+  if (webgl_) {
+    GpuThreadChannelManager* gpu_thread_channel_manager = thread_channel_->gpu_thread_channel_manager();
+	gpu_thread_channel_manager->delegate()->DidLoseContext(
       (surface_handle_ == kNullSurfaceHandle), state.context_lost_reason,
       active_url_);
-
+  } else {
+    GpuChannelManager* gpu_channel_manager = channel_->gpu_channel_manager();
+    gpu_channel_manager->delegate()->DidLoseContext(
+        (surface_handle_ == kNullSurfaceHandle), state.context_lost_reason,
+        active_url_);
+  }
   CheckContextLost();
 }
 
@@ -901,6 +1320,35 @@ void GpuCommandBufferStub::OnWaitForGetOffsetInRange(
   CheckCompleteWaits();
 }
 
+void GpuCommandBufferStub::OnWaitForGetOffsetInRangeForWebgl(
+    int32_t start,
+    int32_t end,
+	gpu::CommandBuffer::State* state) {
+  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnWaitForGetOffsetInRangeForWebgl");
+  DCHECK(command_buffer_.get());
+  CheckContextLost();
+  if (wait_for_get_offset_) {
+    LOG(ERROR)
+        << "Got WaitForGetOffset command while currently waiting for offset.";
+  }
+  wait_for_get_offset_ =
+      base::MakeUnique<WaitForCommandState>(start, end, nullptr);
+  CheckCompleteWaitsForWebgl(state);
+}
+
+void GpuCommandBufferStub::OnWaitForTokenInRangeForWebgl(int32_t start,
+                                                         int32_t end,
+	                                                     gpu::CommandBuffer::State* state) {
+  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnWaitForTokenInRange");
+  DCHECK(command_buffer_.get());
+  CheckContextLost();
+  if (wait_for_token_)
+    LOG(ERROR) << "Got WaitForToken command while currently waiting for token.";
+  wait_for_token_ =
+      base::MakeUnique<WaitForCommandState>(start, end, nullptr);
+  CheckCompleteWaitsForWebgl(state);
+}
+
 void GpuCommandBufferStub::CheckCompleteWaits() {
   if (wait_for_token_ || wait_for_get_offset_) {
     CommandBuffer::State state = command_buffer_->GetLastState();
@@ -924,6 +1372,29 @@ void GpuCommandBufferStub::CheckCompleteWaits() {
           wait_for_get_offset_->reply.get(), state);
       Send(wait_for_get_offset_->reply.release());
       wait_for_get_offset_.reset();
+    }
+  }
+}
+
+void GpuCommandBufferStub::CheckCompleteWaitsForWebgl(CommandBuffer::State* s) {
+  if (wait_for_token_ || wait_for_get_offset_) {
+    CommandBuffer::State state = command_buffer_->GetLastState();
+    if (wait_for_token_ &&
+        (CommandBuffer::InRange(
+             wait_for_token_->start, wait_for_token_->end, state.token) ||
+         state.error != error::kNoError)) {
+      ReportState();
+      wait_for_token_.reset();
+	  *s = state;
+    }
+    if (wait_for_get_offset_ &&
+        (CommandBuffer::InRange(wait_for_get_offset_->start,
+                                     wait_for_get_offset_->end,
+                                     state.get_offset) ||
+         state.error != error::kNoError)) {
+      ReportState();
+      wait_for_get_offset_.reset();
+	  *s = state;
     }
   }
 }
@@ -983,6 +1454,18 @@ void GpuCommandBufferStub::OnRegisterTransferBuffer(
   }
 }
 
+void GpuCommandBufferStub::OnRegisterTransferBufferForWebgl(
+    int32_t id,
+    scoped_refptr<gpu::Buffer> buffer,
+    uint32_t size) {
+  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnRegisterTransferBuffer");
+
+  if (command_buffer_) {
+    command_buffer_->RegisterTransferBuffer(
+        id, buffer);
+  }
+}
+
 void GpuCommandBufferStub::OnDestroyTransferBuffer(int32_t id) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnDestroyTransferBuffer");
 
@@ -991,14 +1474,20 @@ void GpuCommandBufferStub::OnDestroyTransferBuffer(int32_t id) {
 }
 
 void GpuCommandBufferStub::OnCommandProcessed() {
-  DCHECK(channel_->watchdog());
-  channel_->watchdog()->CheckArmed();
+  if(!webgl_) {
+    DCHECK(channel_->watchdog());
+    channel_->watchdog()->CheckArmed();
+  }
 }
 
 void GpuCommandBufferStub::ReportState() { command_buffer_->UpdateState(); }
 
 void GpuCommandBufferStub::PutChanged() {
-  FastSetActiveURL(active_url_, active_url_hash_, channel_);
+  if (webgl_) {
+    FastSetActiveURLForWebgl(active_url_, active_url_hash_, thread_channel_);
+  } else {
+    FastSetActiveURL(active_url_, active_url_hash_, channel_);
+  }
   executor_->PutChanged();
 }
 
@@ -1035,7 +1524,14 @@ void GpuCommandBufferStub::OnSignalSyncToken(const SyncToken& sync_token,
 }
 
 void GpuCommandBufferStub::OnSignalAck(uint32_t id) {
-  Send(new GpuCommandBufferMsg_SignalAck(route_id_, id));
+  if (webgl_) {
+    thread_channel_->render_task_runner()->PostTask(FROM_HERE, base::Bind(
+	                                &GpuThreadHost::OnSignalAck,
+									thread_channel_->GetGpuThreadHost(),
+									id));
+  } else {
+    Send(new GpuCommandBufferMsg_SignalAck(route_id_, id));
+  }
 }
 
 void GpuCommandBufferStub::OnSignalQuery(uint32_t query_id, uint32_t id) {
@@ -1058,21 +1554,97 @@ void GpuCommandBufferStub::OnSignalQuery(uint32_t query_id, uint32_t id) {
 }
 
 void GpuCommandBufferStub::OnFenceSyncRelease(uint64_t release) {
-  if (sync_point_client_->client_state()->IsFenceSyncReleased(release)) {
-    DLOG(ERROR) << "Fence Sync has already been released.";
+  if (webgl_) {
+
+    gles2::MailboxManager* mailbox_manager =
+        context_group_->mailbox_manager();
+    if (mailbox_manager->UsesSync() && MakeCurrent()) {
+      SyncToken sync_token(CommandBufferNamespace::GPU_IO, 0,
+                                command_buffer_id_, release);
+      mailbox_manager->PushTextureUpdates(sync_token);
+    }
+
+    command_buffer_->SetReleaseCount(release);
+
+    compositor_channel_->Send(new GpuCommandBufferMsg_InsertFenceSyncByToken(
+  	                                                compositor_route_id_,
+													CommandBufferNamespace::GPU_IO,
+                                                    command_buffer_id_, 
+				                                    release));
+  } else {
+    if (sync_point_client_->client_state()->IsFenceSyncReleased(release)) {
+      DLOG(ERROR) << "Fence Sync has already been released.";
+      return;
+    }
+
+    gles2::MailboxManager* mailbox_manager =
+        context_group_->mailbox_manager();
+    if (mailbox_manager->UsesSync() && MakeCurrent()) {
+      SyncToken sync_token(CommandBufferNamespace::GPU_IO, 0,
+                                command_buffer_id_, release);
+      mailbox_manager->PushTextureUpdates(sync_token);
+    }
+
+    command_buffer_->SetReleaseCount(release);
+    sync_point_client_->ReleaseFenceSync(release);
+  }
+}
+
+void GpuCommandBufferStub::OnInsertFenceSyncByToken(CommandBufferNamespace namespace_id, CommandBufferId command_buffer_id, uint64_t release) {
+  DCHECK(has_out_process_sync_);
+
+  scoped_refptr<SyncPointClientState> client_state = channel_->sync_point_manager()->
+              GetSyncPointClientState(namespace_id, command_buffer_id);
+  DCHECK(client_state);
+  client_state->ReleaseFenceSync(release);
+}
+
+void GpuCommandBufferStub::OnCreateOutProcessSyncPointClient(CommandBufferNamespace namespace_id, CommandBufferId command_buffer_id) {
+  if (!channel_->sync_point_manager()->
+          GetSyncPointClientState(namespace_id, command_buffer_id)) {
+      out_process_sync_point_client_ = channel_->sync_point_manager()->
+	                              CreateSyncPointClient(SyncPointOrderData::Create(true),
+                                                        namespace_id,
+														command_buffer_id);
+  }
+}
+
+void GpuCommandBufferStub::OnOutProcessWaitFenceSync(
+    CommandBufferNamespace namespace_id,
+    CommandBufferId command_buffer_id,
+    uint64_t release,
+	bool* already_released,
+	bool* needs_pull_texture_updates) {
+  DCHECK(out_process_sync_point_client_);
+
+  scoped_refptr<SyncPointClientState> release_state =
+      channel_->sync_point_manager()->GetSyncPointClientState(
+          namespace_id, command_buffer_id);
+
+  if (!release_state) {
+    *already_released = true;
     return;
   }
 
-  gles2::MailboxManager* mailbox_manager =
-      context_group_->mailbox_manager();
-  if (mailbox_manager->UsesSync() && MakeCurrent()) {
-    SyncToken sync_token(CommandBufferNamespace::GPU_IO, 0,
-                              command_buffer_id_, release);
-    mailbox_manager->PushTextureUpdates(sync_token);
+  if (release_state->IsFenceSyncReleased(release)) {
+    *already_released = true;
+	*needs_pull_texture_updates = true;
+	return;
   }
 
-  command_buffer_->SetReleaseCount(release);
-  sync_point_client_->ReleaseFenceSync(release);
+  TRACE_EVENT_ASYNC_BEGIN1("gpu", "WaitFenceSync", this, "GpuCommandBufferStub",
+                           this);
+  bool waiting_for_sync_point = true;
+  out_process_sync_point_client_->WaitNonThreadSafe(
+      release_state.get(), release, channel_->task_runner(), 
+	  base::Bind(&GpuCommandBufferStub::OnOutProcessWaitFenceSyncCompleted,
+	             this->AsWeakPtr(), release));
+
+  if (!waiting_for_sync_point)
+    *already_released = true;
+
+  *already_released = false;
+
 }
 
 void GpuCommandBufferStub::OnDescheduleUntilFinished() {
@@ -1125,6 +1697,47 @@ bool GpuCommandBufferStub::OnWaitFenceSync(
   return false;
 }
 
+bool GpuCommandBufferStub::OnWaitFenceSyncForWebgl(
+    CommandBufferNamespace namespace_id,
+    CommandBufferId command_buffer_id,
+    uint64_t release) {
+  DCHECK(webgl_);
+  DCHECK(compositor_channel_);
+  DCHECK(!waiting_for_sync_point_);
+  DCHECK(executor_->scheduled());
+
+  scoped_refptr<SyncPointClientState> release_state =
+      thread_channel_->sync_point_manager()->GetSyncPointClientState(
+          namespace_id, command_buffer_id);
+
+  bool already_released = false;
+  bool needs_pull_texture_updates = false;
+
+  if (!release_state) {
+    DCHECK(compositor_channel_);
+    compositor_channel_->Send(new GpuCommandBufferMsg_OutProcessWaitFenceSync(
+                                  compositor_route_id_,
+                                  namespace_id,
+                                  command_buffer_id,
+                                  release,
+                                  &already_released,
+        													 &needs_pull_texture_updates));
+  }
+
+  if (already_released) {
+    if (needs_pull_texture_updates) {
+      PullTextureUpdates(namespace_id, command_buffer_id, release);
+    }
+	return true;
+  }
+
+  TRACE_EVENT_ASYNC_BEGIN1("gpu", "WaitFenceSync", this, "GpuCommandBufferStub",
+                           this);
+
+  executor_->SetScheduled(false);
+  return false;
+}
+
 void GpuCommandBufferStub::OnWaitFenceSyncCompleted(
     CommandBufferNamespace namespace_id,
     CommandBufferId command_buffer_id,
@@ -1136,6 +1749,10 @@ void GpuCommandBufferStub::OnWaitFenceSyncCompleted(
   waiting_for_sync_point_ = false;
   executor_->SetScheduled(true);
   channel_->OnStreamRescheduled(stream_id_, true);
+}
+
+void GpuCommandBufferStub::OnOutProcessWaitFenceSyncCompleted(
+    uint64_t release) {
 }
 
 void GpuCommandBufferStub::OnCreateImage(
@@ -1211,10 +1828,17 @@ void GpuCommandBufferStub::SendConsoleMessage(int32_t id,
   GPUCommandBufferConsoleMessage console_message;
   console_message.id = id;
   console_message.message = message;
-  IPC::Message* msg = new GpuCommandBufferMsg_ConsoleMsg(
-      route_id_, console_message);
-  msg->set_unblock(true);
-  Send(msg);
+  if (webgl_) {
+    thread_channel_->render_task_runner()->PostTask(FROM_HERE, base::Bind(
+	                                &GpuThreadHost::OnConsoleMessage,
+									thread_channel_->GetGpuThreadHost(),
+									console_message));
+  } else {
+    IPC::Message* msg = new GpuCommandBufferMsg_ConsoleMsg(
+        route_id_, console_message);
+    msg->set_unblock(true);
+    Send(msg);
+  }
 }
 
 void GpuCommandBufferStub::SendCachedShader(
@@ -1274,5 +1898,52 @@ void GpuCommandBufferStub::MarkContextLost() {
     decoder_->MarkContextLost(error::kUnknown);
   command_buffer_->SetParseError(error::kLostContext);
 }
+
+void GpuCommandBufferStub::CreateTextureSync(GLuint client_id, GLuint service_id) {
+  DCHECK(compositor_channel_);
+  compositor_channel_->Send(new GpuCommandBufferMsg_CreateTextureSync(
+               compositor_route_id_,
+			   client_id,
+			   service_id));
+}
+
+void GpuCommandBufferStub::RemoveTextureSync(GLuint client_id) {
+  DCHECK(compositor_channel_);
+  compositor_channel_->Send(new GpuCommandBufferMsg_RemoveTextureSync(
+               compositor_route_id_,
+			   client_id));
+}
+
+void GpuCommandBufferStub::OnCreateTextureSync(GLuint client_id, GLuint service_id) {
+  DCHECK(decoder_);
+  context_group_->texture_manager()->CreateTexture(client_id, service_id);
+}
+
+void GpuCommandBufferStub::OnRemoveTextureSync(GLuint client_id) {
+  DCHECK(decoder_);
+  context_group_->texture_manager()->RemoveTexture(client_id);
+}
+
+void GpuCommandBufferStub::ProduceTextureDirectSync(uint32_t client, 
+                                                    uint32_t target, 
+                                                    const volatile void* data) {
+  Mailbox mailbox = 
+       Mailbox::FromVolatile(*reinterpret_cast<const volatile Mailbox*>(data));
+  compositor_channel_->Send(new GpuCommandBufferMsg_ProduceTextureDirectSync(
+                              compositor_route_id_,
+							  client,
+							  target,
+							  mailbox));
+}
+
+void GpuCommandBufferStub::OnProduceTextureDirectSync(GLuint client_id,
+                                                      GLenum target,
+													  Mailbox mailbox) {
+  decoder_->ProduceTextureRefSync("glProduceTextureDirectSync",
+                        !client_id,
+			context_group_->texture_manager()->GetTexture(client_id),
+			target,
+			mailbox);
+}													  
 
 }  // namespace gpu

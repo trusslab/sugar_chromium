@@ -21,6 +21,8 @@
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/constants.h"
 
+#include "base/prints.h"
+
 namespace gpu {
 
 CommandBufferHelper::CommandBufferHelper(CommandBuffer* command_buffer)
@@ -42,6 +44,30 @@ CommandBufferHelper::CommandBufferHelper(CommandBuffer* command_buffer)
       context_lost_(false),
       flush_automatically_(true),
       flush_generation_(0) {
+}
+
+CommandBufferHelper::CommandBufferHelper(CommandBuffer* command_buffer, bool webgl)
+    : command_buffer_(command_buffer),
+      ring_buffer_id_(-1),
+      ring_buffer_size_(0),
+      entries_(NULL),
+      total_entry_count_(0),
+      immediate_entry_count_(0),
+      token_(0),
+      put_(0),
+      last_put_sent_(0),
+#if defined(CMD_HELPER_PERIODIC_FLUSH_CHECK)
+      commands_issued_(0),
+#endif
+      usable_(true),
+      context_lost_(false),
+      flush_automatically_(true),
+      flush_generation_(0),
+      webgl_(webgl) {
+  if (base::ThreadTaskRunnerHandle::IsSet()) {
+    base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
+        this, "gpu::CommandBufferHelper", base::ThreadTaskRunnerHandle::Get());
+  }
 }
 
 void CommandBufferHelper::SetAutomaticFlushes(bool enabled) {
@@ -95,6 +121,7 @@ void CommandBufferHelper::CalcImmediateEntries(int waiting_count) {
     }
   }
 }
+
 
 bool CommandBufferHelper::AllocateRingBuffer() {
   if (!usable()) {
@@ -172,6 +199,9 @@ bool CommandBufferHelper::WaitForGetOffsetInRange(int32_t start, int32_t end) {
 
 void CommandBufferHelper::Flush() {
   // Wrap put_ before flush.
+  if (webgl_) {
+  }
+
   if (put_ == total_entry_count_)
     put_ = 0;
 

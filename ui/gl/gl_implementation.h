@@ -29,6 +29,7 @@ enum GLImplementation {
   kGLImplementationSwiftShaderGL,
   kGLImplementationAppleGL,
   kGLImplementationEGLGLES2,
+  kGLImplementationEGLGLES2Sugar,
   kGLImplementationMockGL,
   kGLImplementationStubGL,
 };

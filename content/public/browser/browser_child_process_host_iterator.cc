@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "content/browser/browser_child_process_host_impl.h"
+#include "content/renderer/render_gpu_thread_host_impl.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace content {

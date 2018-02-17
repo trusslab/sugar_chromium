@@ -54,6 +54,8 @@ source_set("common_sources") {
     "texture_in_use_response.h",
     "thread_local.h",
     "time.h",
+    "transferable_texture.cc",
+    "transferable_texture.h",
   ]
 
   configs += [ "//gpu:gpu_implementation" ]

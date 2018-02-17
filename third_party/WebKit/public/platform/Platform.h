@@ -495,6 +495,15 @@ class BLINK_PLATFORM_EXPORT Platform {
     return nullptr;
   }
 
+  virtual WebGraphicsContext3DProvider*
+  createOffscreenGraphicsContext3DProviderForWebgl(
+      const ContextAttributes&,
+      const WebURL& topDocumentURL,
+      WebGraphicsContext3DProvider* shareContext,
+      GraphicsInfo*) {
+    return nullptr;
+  }
+
   // Returns a newly allocated and initialized offscreen context provider,
   // backed by the process-wide shared main thread context. Returns null if
   // the context cannot be created or initialized.

@@ -41,6 +41,7 @@ class CC_EXPORT TextureMailbox {
                  const gfx::Size& size_in_pixels,
                  bool is_overlay_candidate,
                  bool secure_output_only);
+
   TextureMailbox(SharedBitmap* shared_bitmap, const gfx::Size& size_in_pixels);
 
   ~TextureMailbox();

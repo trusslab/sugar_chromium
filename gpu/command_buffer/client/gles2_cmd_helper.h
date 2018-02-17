@@ -19,6 +19,7 @@ namespace gles2 {
 class GPU_EXPORT GLES2CmdHelper : public CommandBufferHelper {
  public:
   explicit GLES2CmdHelper(CommandBuffer* command_buffer);
+  explicit GLES2CmdHelper(CommandBuffer* command_buffer, bool webgl);
   ~GLES2CmdHelper() override;
 
   // Include the auto-generated part of this class. We split this because it

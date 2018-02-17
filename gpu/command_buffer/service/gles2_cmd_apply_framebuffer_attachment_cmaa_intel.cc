@@ -12,6 +12,8 @@
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_version_info.h"
+#include "base/debug/stack_trace.h"
+#include "base/prints.h"
 
 #define SHADER(Src) #Src
 
@@ -46,7 +48,8 @@ ApplyFramebufferAttachmentCMAAINTELResourceManager::
       edges0_shader_target_texture_slot2_(0),
       edges1_shader_result_edge_texture_(0),
       process_and_apply_shader_result_rgba_texture_slot1_(0),
-      edges_combine_shader_result_edge_texture_(0) {}
+      edges_combine_shader_result_edge_texture_(0) {
+      }
 
 ApplyFramebufferAttachmentCMAAINTELResourceManager::
     ~ApplyFramebufferAttachmentCMAAINTELResourceManager() {

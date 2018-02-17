@@ -20,6 +20,7 @@ bool WebGraphicsContext3DProviderImpl::bindToCurrentThread() {
   return provider_->BindToCurrentThread();
 }
 
+
 gpu::gles2::GLES2Interface* WebGraphicsContext3DProviderImpl::contextGL() {
   return provider_->ContextGL();
 }

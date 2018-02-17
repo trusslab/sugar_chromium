@@ -19,6 +19,8 @@ source_set("gpu") {
     "//gpu/ipc/common",
     "//services/ui/public/interfaces",
     "//url",
+    "//gpu/itc/client",
+    "//gpu/itc/service",
   ]
 
   allow_circular_includes_from = [ ":internal" ]

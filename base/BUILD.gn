@@ -1095,6 +1095,7 @@ component("base") {
     "win/windows_version.h",
     "win/wrapped_window_proc.cc",
     "win/wrapped_window_proc.h",
+    "prints.h",
   ]
 
   all_dependent_configs = []

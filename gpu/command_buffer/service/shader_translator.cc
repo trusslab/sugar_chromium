@@ -18,6 +18,8 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_version_info.h"
 
+#include "base/prints.h"
+
 namespace gpu {
 namespace gles2 {
 

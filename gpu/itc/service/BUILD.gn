@@ -1,0 +1,53 @@
+# Copyright (C) 2016-2018 University of California, Irvine
+#
+# Authors:
+# Zhihao Yao <z.yao@uci.edu>
+# Zongheng Ma <zonghenm@uci.edu>
+# Yingtong Liu <yingtong@uci.edu>
+# Ardalan Amiri Sani <arrdalan@gmail.com>
+#
+# All rights reserved. Use of this source code is governed
+# by a BSD-style license that can be found in the LICENSE file.
+#
+# Based on gpu/ipc/service/BUILD.gn,
+#
+# Copyright 2016 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/config/ui.gni")
+
+group("service") {
+    public_deps = [
+      ":itc_service_sources",
+    ]
+}
+
+source_set("itc_service_sources") {
+  sources = [
+    "gpu_thread_channel.cc",
+    "gpu_thread_channel.h",
+    "gpu_thread_channel_manager.cc",
+    "gpu_thread_channel_manager.h",
+    "gpu_thread_channel_manager_delegate.cc",
+    "gpu_thread_channel_manager_delegate.h",
+  ]
+  deps = [
+    "//base",
+    "//gpu/command_buffer/client:client_sources",
+    "//gpu/command_buffer/common:common_sources",
+    "//gpu/config:config_sources",
+    "//gpu/ipc/common:ipc_common_sources",
+    "//ipc",
+    "//ui/base/",
+    "//ui/events/ipc",
+    "//ui/gfx/ipc",
+    "//ui/gfx/ipc/geometry",
+    "//ui/gl",
+    "//url/ipc:url_ipc",
+    "//gpu/ipc/service:ipc_service_sources",
+  ]
+  if (use_ozone) {
+    deps += [ "//ui/ozone" ]
+  }
+}

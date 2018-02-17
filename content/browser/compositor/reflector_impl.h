@@ -8,6 +8,8 @@
 #include <memory>
 
 #include "base/memory/scoped_vector.h"
+#include "base/memory/weak_ptr.h"
+#include "base/synchronization/lock.h"
 #include "content/browser/compositor/image_transport_factory.h"
 #include "content/common/content_export.h"
 #include "gpu/command_buffer/common/mailbox_holder.h"

@@ -24,6 +24,8 @@
 #include "ui/gl/gpu_preference.h"
 #include "url/gurl.h"
 
+#include "gpu/itc/client/gpu_thread_host.h"
+
 namespace gpu {
 class CommandBufferProxyImpl;
 class GpuChannelHost;
@@ -60,6 +62,37 @@ class ContextProviderCommandBuffer
       ContextProviderCommandBuffer* shared_context_provider,
       command_buffer_metrics::ContextType type);
 
+  ContextProviderCommandBuffer(
+      scoped_refptr<gpu::GpuThreadHost> channel,
+      int32_t stream_id,
+      gpu::GpuStreamPriority stream_priority,
+      gpu::SurfaceHandle surface_handle,
+      const GURL& active_url,
+      bool automatic_flushes,
+      bool support_locking,
+      const gpu::SharedMemoryLimits& memory_limits,
+      const gpu::gles2::ContextCreationAttribHelper& attributes,
+      ContextProviderCommandBuffer* shared_context_provider,
+      command_buffer_metrics::ContextType type,
+	  scoped_refptr<base::SingleThreadTaskRunner> gpu_thread_task_runner,
+      scoped_refptr<gpu::GpuChannelHost> compositor_channel,
+	  int32_t compositor_route_id,
+	  gpu::gles2::GLES2Implementation* compositor_gles2_impl);
+
+  ContextProviderCommandBuffer(
+      scoped_refptr<gpu::GpuChannelHost> channel,
+      int32_t stream_id,
+      gpu::GpuStreamPriority stream_priority,
+      gpu::SurfaceHandle surface_handle,
+      const GURL& active_url,
+      bool automatic_flushes,
+      bool support_locking,
+      const gpu::SharedMemoryLimits& memory_limits,
+      const gpu::gles2::ContextCreationAttribHelper& attributes,
+      ContextProviderCommandBuffer* shared_context_provider,
+      command_buffer_metrics::ContextType type,
+	  bool render_compositor);
+
   gpu::CommandBufferProxyImpl* GetCommandBufferProxy();
   // Gives the GL internal format that should be used for calling CopyTexImage2D
   // on the default framebuffer.
@@ -87,6 +120,16 @@ class ContextProviderCommandBuffer
   // which BindToThread is called.
   void SetDefaultTaskRunner(
       scoped_refptr<base::SingleThreadTaskRunner> default_task_runner);
+
+  gpu::CommandBufferProxyImpl* command_buffer(){
+    return command_buffer_.get();
+  }
+
+  gpu::gles2::GLES2Implementation* gles2_impl(){
+    return gles2_impl_.get();
+  }
+
+  scoped_refptr<gpu::GpuChannelHost> channel(); 
 
  protected:
   ~ContextProviderCommandBuffer() override;
@@ -135,6 +178,16 @@ class ContextProviderCommandBuffer
   std::unique_ptr<cc::ContextCacheController> cache_controller_;
 
   LostContextCallback lost_context_callback_;
+
+  scoped_refptr<base::SingleThreadTaskRunner> gpu_thread_task_runner_;
+  scoped_refptr<gpu::GpuThreadHost> gpu_thread_host_;
+  scoped_refptr<gpu::GpuChannelHost> compositor_channel_;
+  int32_t compositor_route_id_;
+
+  gpu::gles2::GLES2Implementation* compositor_gles2_impl_;
+  bool webgl_ = false;
+  bool render_compositor_ = false;
+
 };
 
 }  // namespace ui

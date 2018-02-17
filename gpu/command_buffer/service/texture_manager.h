@@ -25,7 +25,7 @@
 #include "gpu/gpu_export.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gl/gl_image.h"
-
+#include "gpu/command_buffer/common/transferable_texture.h"
 namespace gpu {
 namespace gles2 {
 
@@ -55,6 +55,9 @@ class GPU_EXPORT TextureBase {
   // bound to a different target.
   GLenum target() const { return target_; }
 
+  void set_service_id(GLuint service_id) {service_id_ = service_id;}
+  void set_target(GLenum target) {target_ = target;}
+
  protected:
   // The id of the texture.
   GLuint service_id_;
@@ -70,7 +73,7 @@ class GPU_EXPORT TextureBase {
  private:
   friend class MailboxManagerSync;
   friend class MailboxManagerImpl;
-
+  friend class MailboxManagerWebglImpl;
   void SetMailboxManager(MailboxManager* mailbox_manager);
 
   MailboxManager* mailbox_manager_;
@@ -133,6 +136,9 @@ class GPU_EXPORT Texture final : public TextureBase {
   const SamplerState& sampler_state() const {
     return sampler_state_;
   }
+
+
+  void SetParamsToTransferableTexture(gpu::TransferableTexture* transferable_texture);
 
   GLenum min_filter() const {
     return sampler_state_.min_filter;
@@ -330,7 +336,9 @@ class GPU_EXPORT Texture final : public TextureBase {
                               bool immutable);
 
  private:
+  friend class gpu::TransferableTexture;
   friend class MailboxManagerImpl;
+  friend class MailboxManagerWebglImpl;
   friend class MailboxManagerSync;
   friend class MailboxManagerTest;
   friend class TextureDefinition;
@@ -518,6 +526,9 @@ class GPU_EXPORT Texture final : public TextureBase {
   //           GL_TEXTURE_2D_ARRAY or GL_TEXTURE_3D (for GLES3)
   //   max_levels: The maximum levels this type of target can have.
   void SetTarget(GLenum target, GLint max_levels);
+  void SetTargetWebgl(
+      const FeatureInfo* feature_info, GLenum target, GLint max_levels);
+
 
   // Update info about this texture.
   void Update();
@@ -540,10 +551,12 @@ class GPU_EXPORT Texture final : public TextureBase {
 
   // Computes the CanRenderCondition flag.
   CanRenderCondition GetCanRenderCondition() const;
+   CanRenderCondition GetCanRenderConditionWebgl() const;
 
   // Updates the unrenderable texture count in all the managers referencing this
   // texture.
   void UpdateCanRenderCondition();
+  void UpdateCanRenderConditionWebgl();
 
   // Updates the images count in all the managers referencing this
   // texture.
@@ -859,6 +872,10 @@ class GPU_EXPORT TextureManager : public base::trace_event::MemoryDumpProvider {
   void SetTarget(
       TextureRef* ref,
       GLenum target);
+  void SetTargetWebgl(
+      TextureRef* ref,
+      GLenum target);
+  
 
   // Set the info for a particular level in a TexureInfo.
   void SetLevelInfo(TextureRef* ref,

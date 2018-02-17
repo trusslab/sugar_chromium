@@ -111,7 +111,59 @@ bool CanAccessNvidiaDeviceFile() {
 
 }  // namespace
 
+void GetGpuInfoFromCommandLine(gpu::GPUInfo& gpu_info,
+                               base::CommandLine* command_line) {
+  if (!command_line->HasSwitch(switches::kGpuVendorID) ||
+      !command_line->HasSwitch(switches::kGpuDeviceID) ||
+      !command_line->HasSwitch(switches::kGpuDriverVersion))
+    return;
+  bool success = base::HexStringToUInt(
+      command_line->GetSwitchValueASCII(switches::kGpuVendorID),
+      &gpu_info.gpu.vendor_id);
+  DCHECK(success);
+  success = base::HexStringToUInt(
+      command_line->GetSwitchValueASCII(switches::kGpuDeviceID),
+      &gpu_info.gpu.device_id);
+  DCHECK(success);
+  gpu_info.driver_vendor =
+      command_line->GetSwitchValueASCII(switches::kGpuDriverVendor);
+  gpu_info.driver_version =
+      command_line->GetSwitchValueASCII(switches::kGpuDriverVersion);
+  gpu_info.driver_date =
+      command_line->GetSwitchValueASCII(switches::kGpuDriverDate);
+  gpu::ParseSecondaryGpuDevicesFromCommandLine(*command_line, &gpu_info);
+
+  if (command_line->HasSwitch(switches::kGpuActiveVendorID) &&
+      command_line->HasSwitch(switches::kGpuActiveDeviceID)) {
+    uint32_t active_vendor_id = 0;
+    uint32_t active_device_id = 0;
+    success = base::HexStringToUInt(
+        command_line->GetSwitchValueASCII(switches::kGpuActiveVendorID),
+        &active_vendor_id);
+    DCHECK(success);
+    success = base::HexStringToUInt(
+        command_line->GetSwitchValueASCII(switches::kGpuActiveDeviceID),
+        &active_device_id);
+    DCHECK(success);
+    if (gpu_info.gpu.vendor_id == active_vendor_id &&
+        gpu_info.gpu.device_id == active_device_id) {
+      gpu_info.gpu.active = true;
+    } else {
+      for (size_t i = 0; i < gpu_info.secondary_gpus.size(); ++i) {
+        if (gpu_info.secondary_gpus[i].vendor_id == active_vendor_id &&
+            gpu_info.secondary_gpus[i].device_id == active_device_id) {
+          gpu_info.secondary_gpus[i].active = true;
+          break;
+        }
+      }
+    }
+  }
+}
+
 GpuInit::GpuInit() {}
+
+GpuInit::GpuInit(bool webgl)
+     : webgl_(webgl) {}
 
 GpuInit::~GpuInit() {}
 
@@ -163,12 +215,13 @@ bool GpuInit::InitializeAndStartSandbox(const base::CommandLine& command_line) {
   gpu_info_.passthrough_cmd_decoder =
       command_line.HasSwitch(switches::kUsePassthroughCmdDecoder);
 
-  sandbox_helper_->PreSandboxStartup();
+  if (!webgl_) 
+    sandbox_helper_->PreSandboxStartup();
 
 #if defined(OS_LINUX)
   // On Chrome OS ARM Mali, GPU driver userspace creates threads when
   // initializing a GL context, so start the sandbox early.
-  if (command_line.HasSwitch(switches::kGpuSandboxStartEarly))
+  if (command_line.HasSwitch(switches::kGpuSandboxStartEarly) && !webgl_)
     gpu_info_.sandboxed =
         sandbox_helper_->EnsureSandboxInitialized(watchdog_thread_.get());
 #endif  // defined(OS_LINUX)
@@ -180,7 +233,7 @@ bool GpuInit::InitializeAndStartSandbox(const base::CommandLine& command_line) {
   // browser process, for example.
   bool gl_initialized = gl::GetGLImplementation() != gl::kGLImplementationNone;
   if (!gl_initialized)
-    gl_initialized = gl::init::InitializeGLOneOff();
+    gl_initialized = gl::init::InitializeGLOneOff(webgl_);
 
   if (!gl_initialized) {
     VLOG(1) << "gl::init::InitializeGLOneOff failed";
@@ -195,6 +248,7 @@ bool GpuInit::InitializeAndStartSandbox(const base::CommandLine& command_line) {
   // because the basic GPU information is passed down from the host process.
   base::TimeTicks before_collect_context_graphics_info = base::TimeTicks::Now();
 #if !defined(OS_MACOSX)
+  if (!webgl_) {
   CollectGraphicsInfo(gpu_info_);
   if (gpu_info_.context_info_state == gpu::kCollectInfoFatalFailure)
     return false;
@@ -210,6 +264,7 @@ bool GpuInit::InitializeAndStartSandbox(const base::CommandLine& command_line) {
     // Other platforms would need the bindings to query GL strings.
     gpu::ApplyGpuDriverBugWorkarounds(
         gpu_info_, const_cast<base::CommandLine*>(&command_line));
+  }
   }
 #endif  // !defined(OS_MACOSX)
 
@@ -233,8 +288,8 @@ bool GpuInit::InitializeAndStartSandbox(const base::CommandLine& command_line) {
   } else if (enable_watchdog && delayed_watchdog_enable) {
     watchdog_thread_ = gpu::GpuWatchdogThread::Create();
   }
-
-  if (!gpu_info_.sandboxed)
+  
+  if (!gpu_info_.sandboxed && !webgl_)
     gpu_info_.sandboxed =
         sandbox_helper_->EnsureSandboxInitialized(watchdog_thread_.get());
   return true;

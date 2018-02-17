@@ -27,6 +27,8 @@
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_version_info.h"
 
+#include "base/prints.h"
+
 namespace gpu {
 namespace gles2 {
 
@@ -108,7 +110,7 @@ ContextGroup::ContextGroup(
       feature_info_(feature_info),
       image_factory_(image_factory),
       passthrough_resources_(new PassthroughResources),
-      progress_reporter_(progress_reporter),
+      progress_reporter_(NULL),
       gpu_feature_info_(gpu_feature_info) {
   {
     DCHECK(feature_info_);

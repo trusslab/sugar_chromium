@@ -24,7 +24,7 @@
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
 #endif
-
+#include "base/debug/stack_trace.h"
 namespace base {
 
 namespace {
@@ -66,7 +66,7 @@ Thread::~Thread() {
 
 bool Thread::Start() {
   DCHECK(owning_sequence_checker_.CalledOnValidSequence());
-
+  
   Options options;
 #if defined(OS_WIN)
   if (com_status_ == STA)
@@ -317,7 +317,6 @@ void Thread::ThreadMain() {
         new win::ScopedCOMInitializer(win::ScopedCOMInitializer::kMTA));
   }
 #endif
-
   // Let the thread do extra initialization.
   Init();
 

@@ -12,6 +12,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 
+#include "base/prints.h"
+
 namespace base {
 
 std::string NativeLibraryLoadError::ToString() const {

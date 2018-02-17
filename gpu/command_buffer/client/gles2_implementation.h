@@ -34,6 +34,7 @@
 #include "gpu/command_buffer/common/debug_marker_manager.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 
+#include "gpu/command_buffer/common/transferable_texture.h"
 #if !defined(NDEBUG) && !defined(__native_client__) && !defined(GLES2_CONFORMANCE_TESTS)  // NOLINT
   #if defined(GLES2_INLINE_OPTIMIZATION)
     // TODO(gman): Replace with macros that work with inline optmization.
@@ -106,6 +107,8 @@ class IdAllocator;
 class ScopedTransferBufferPtr;
 class TransferBufferInterface;
 
+class CommandBufferProxyImpl;
+
 namespace gles2 {
 
 class GLES2CmdHelper;
@@ -167,6 +170,16 @@ class GLES2_IMPL_EXPORT GLES2Implementation
                       bool support_client_side_arrays,
                       GpuControl* gpu_control);
 
+  GLES2Implementation(GLES2CmdHelper* helper,
+                      scoped_refptr<ShareGroup> share_group,
+                      TransferBufferInterface* transfer_buffer,
+                      bool bind_generates_resource,
+                      bool lose_context_when_out_of_memory,
+                      bool support_client_side_arrays,
+                      GpuControl* gpu_control,
+					  bool webgl,
+					  GLES2Implementation* compositor_gles2_impl);
+
   ~GLES2Implementation() override;
 
   bool Initialize(
@@ -186,7 +199,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   // it means we can easily edit the non-auto generated parts right here in
   // this file instead of having to edit some template or the code generator.
   #include "gpu/command_buffer/client/gles2_implementation_autogen.h"
-
+ 
   // ContextSupport implementation.
   void Swap() override;
   void SwapWithBounds(const std::vector<gfx::Rect>& rects) override;
@@ -830,6 +843,9 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   // Populated if cached_extension_string_ != nullptr. These point to
   // gl_strings, valid forever.
   std::vector<const char*> cached_extensions_;
+
+  bool webgl_ = false;
+  GLES2Implementation* compositor_gles2_impl_ = nullptr;
 
   base::WeakPtrFactory<GLES2Implementation> weak_ptr_factory_;
 

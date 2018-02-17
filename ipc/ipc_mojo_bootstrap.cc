@@ -59,6 +59,27 @@ class ChannelAssociatedGroupController
         "IPC::mojom::Bootstrap [master] MessageHeaderValidator");
   }
 
+  ChannelAssociatedGroupController(
+      bool webgl,
+	  bool set_interface_id_namespace_bit,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner)
+      : webgl_(webgl),
+	    task_runner_(ipc_task_runner),
+        proxy_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+        set_interface_id_namespace_bit_(set_interface_id_namespace_bit),
+        filters_(this),
+        control_message_handler_(this),
+        control_message_proxy_thunk_(this),
+        control_message_proxy_(&control_message_proxy_thunk_) {
+    if (webgl_) {
+	}
+	thread_checker_.DetachFromThread();
+    control_message_handler_.SetDescription(
+        "IPC::mojom::Bootstrap [master] PipeControlMessageHandler");
+    filters_.Append<mojo::MessageHeaderValidator>(
+        "IPC::mojom::Bootstrap [master] MessageHeaderValidator");
+  }
+
   void Bind(mojo::ScopedMessagePipeHandle handle) {
     DCHECK(thread_checker_.CalledOnValidThread());
     DCHECK(task_runner_->BelongsToCurrentThread());
@@ -92,7 +113,7 @@ class ChannelAssociatedGroupController
 
   void CreateChannelEndpoints(mojom::ChannelAssociatedPtr* sender,
                               mojom::ChannelAssociatedRequest* receiver) {
-    mojo::InterfaceId sender_id, receiver_id;
+	mojo::InterfaceId sender_id, receiver_id;
     if (set_interface_id_namespace_bit_) {
       sender_id = 1 | mojo::kInterfaceIdNamespaceMask;
       receiver_id = 1;
@@ -834,6 +855,8 @@ class ChannelAssociatedGroupController
     return true;
   }
 
+  bool webgl_ = false;
+
   // Checked in places which must be run on the master endpoint's thread.
   base::ThreadChecker thread_checker_;
 
@@ -921,6 +944,15 @@ std::unique_ptr<MojoBootstrap> MojoBootstrap::Create(
   return base::MakeUnique<MojoBootstrapImpl>(
       std::move(handle), new ChannelAssociatedGroupController(
                              mode == Channel::MODE_SERVER, ipc_task_runner));
+}
+
+std::unique_ptr<MojoBootstrap> MojoBootstrap::CreateForWebgl(
+    mojo::ScopedMessagePipeHandle handle,
+    Channel::Mode mode,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner) {
+  return base::MakeUnique<MojoBootstrapImpl>(
+      std::move(handle), new ChannelAssociatedGroupController(
+                             true, mode == Channel::MODE_SERVER, ipc_task_runner));
 }
 
 }  // namespace IPC

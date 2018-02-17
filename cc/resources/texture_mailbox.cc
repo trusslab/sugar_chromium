@@ -62,6 +62,7 @@ TextureMailbox::TextureMailbox(const gpu::Mailbox& mailbox,
   DCHECK(!is_overlay_candidate || !size_in_pixels.IsEmpty());
 }
 
+
 TextureMailbox::TextureMailbox(SharedBitmap* shared_bitmap,
                                const gfx::Size& size_in_pixels)
     : shared_bitmap_(shared_bitmap),

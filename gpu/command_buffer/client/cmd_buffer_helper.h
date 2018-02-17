@@ -54,6 +54,7 @@ class GPU_EXPORT CommandBufferHelper
     : public base::trace_event::MemoryDumpProvider {
  public:
   explicit CommandBufferHelper(CommandBuffer* command_buffer);
+  explicit CommandBufferHelper(CommandBuffer* command_buffer, bool webgl);
   ~CommandBufferHelper() override;
 
   // Initializes the CommandBufferHelper.
@@ -315,6 +316,7 @@ class GPU_EXPORT CommandBufferHelper
   // Incremented every time the helper flushes the command buffer.
   // Can be used to track when prior commands have been flushed.
   uint32_t flush_generation_;
+  bool webgl_ = false;
 
   friend class CommandBufferHelperTest;
   DISALLOW_COPY_AND_ASSIGN(CommandBufferHelper);

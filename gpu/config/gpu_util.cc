@@ -182,7 +182,7 @@ void InitializeDualGpusIfSupported(
 }
 
 GpuFeatureInfo GetGpuFeatureInfo(const GPUInfo& gpu_info,
-                                 const base::CommandLine& command_line) {
+                                 const base::CommandLine& command_line) {								 
   GpuFeatureInfo gpu_feature_info;
   std::set<int> blacklisted_features;
   if (!command_line.HasSwitch(switches::kIgnoreGpuBlacklist)) {

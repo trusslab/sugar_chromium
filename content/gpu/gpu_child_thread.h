@@ -34,7 +34,6 @@
 #include "services/ui/gpu/gpu_service.h"
 #include "services/ui/gpu/interfaces/gpu_main.mojom.h"
 #include "ui/gfx/native_widget_types.h"
-
 namespace gpu {
 class GpuMemoryBufferFactory;
 class GpuWatchdogThread;
@@ -73,6 +72,12 @@ class GpuChildThread : public ChildThreadImpl,
                  const gpu::GPUInfo& gpu_info,
                  const gpu::GpuFeatureInfo& gpu_feature_info,
                  gpu::GpuMemoryBufferFactory* gpu_memory_buffer_factory);
+
+  GpuChildThread(const InProcessChildThreadParams& params,
+                 const gpu::GPUInfo& gpu_info,
+                 const gpu::GpuFeatureInfo& gpu_feature_info,
+                 gpu::GpuMemoryBufferFactory* gpu_memory_buffer_factory,
+				 gpu::gles2::MailboxManager* mailbox_manager);
 
   ~GpuChildThread() override;
 
@@ -150,6 +155,8 @@ class GpuChildThread : public ChildThreadImpl,
   sandbox::TargetServices* target_services_;
 #endif
 
+  gpu::gles2::MailboxManager* mailbox_manager_;
+
   // Information about the GPU, such as device and vendor ID.
   gpu::GPUInfo gpu_info_;
 
@@ -161,6 +168,8 @@ class GpuChildThread : public ChildThreadImpl,
 
   // ServiceFactory for service_manager::Service hosting.
   std::unique_ptr<GpuServiceFactory> service_factory_;
+  
+  bool webgl_ = false;
 
   // Bindings to the service_manager::mojom::ServiceFactory impl.
   mojo::BindingSet<service_manager::mojom::ServiceFactory>

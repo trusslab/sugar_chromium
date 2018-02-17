@@ -21,6 +21,7 @@
 #include "ui/gl/gl_surface_glx.h"
 #include "ui/gl/gl_surface_osmesa_x11.h"
 #include "ui/gl/gl_switches.h"
+#include "base/prints.h"
 
 namespace gl {
 namespace init {
@@ -35,6 +36,8 @@ const char kGLLibraryName[] = "libGL.so.1";
 
 const char kGLESv2LibraryName[] = "libGLESv2.so.2";
 const char kEGLLibraryName[] = "libEGL.so.1";
+const char kGLESv2LibraryNameSugar[] = "/usr/lib/x86_64-linux-gnu/lib/libGLESv2_2.so.2";
+const char kEGLLibraryNameSugar[] = "/usr/lib/x86_64-linux-gnu/lib/libEGL2.so.1";
 
 const char kGLESv2ANGLELibraryName[] = "libGLESv2.so";
 const char kEGLANGLELibraryName[] = "libEGL.so";
@@ -134,6 +137,62 @@ bool InitializeStaticEGLInternal() {
   return true;
 }
 
+bool InitializeStaticEGLInternalSugar() {
+  base::FilePath glesv2_path(kGLESv2LibraryNameSugar);
+  base::FilePath egl_path(kEGLLibraryNameSugar);
+
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
+  if (command_line->GetSwitchValueASCII(switches::kUseGL) ==
+      kGLImplementationANGLEName) {
+    base::FilePath module_path;
+    if (!PathService::Get(base::DIR_MODULE, &module_path))
+      return false;
+
+    glesv2_path = module_path.Append(kGLESv2ANGLELibraryName);
+    egl_path = module_path.Append(kEGLANGLELibraryName);
+  } else if (command_line->GetSwitchValueASCII(switches::kUseGL) ==
+             kGLImplementationSwiftShaderName) {
+    base::FilePath module_path;
+    if (!command_line->HasSwitch(switches::kSwiftShaderPath))
+      return false;
+    module_path = command_line->GetSwitchValuePath(switches::kSwiftShaderPath);
+
+    glesv2_path = module_path.Append(kGLESv2SwiftShaderLibraryName);
+    egl_path = module_path.Append(kEGLSwiftShaderLibraryName);
+  }
+
+  base::NativeLibrary gles_library = LoadLibraryAndPrintError(glesv2_path);
+  if (!gles_library)
+    return false;
+  base::NativeLibrary egl_library = LoadLibraryAndPrintError(egl_path);
+  if (!egl_library) {
+    base::UnloadNativeLibrary(gles_library);
+    return false;
+  }
+
+  GLGetProcAddressProc get_proc_address =
+      reinterpret_cast<GLGetProcAddressProc>(
+          base::GetFunctionPointerFromNativeLibrary(egl_library,
+                                                    "eglGetProcAddress"));
+  if (!get_proc_address) {
+    LOG(ERROR) << "eglGetProcAddress not found.";
+    base::UnloadNativeLibrary(egl_library);
+    base::UnloadNativeLibrary(gles_library);
+    return false;
+  }
+
+  SetGLGetProcAddressProc(get_proc_address);
+  AddGLNativeLibrary(egl_library);
+  AddGLNativeLibrary(gles_library);
+  SetGLImplementation(kGLImplementationEGLGLES2Sugar);
+
+  InitializeStaticGLBindingsGL();
+  InitializeStaticGLBindingsEGL();
+
+  return true;
+}
+
 }  // namespace
 
 bool InitializeGLOneOffPlatform() {
@@ -141,6 +200,7 @@ bool InitializeGLOneOffPlatform() {
       base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kHeadless))
     return true;
+
 
   switch (GetGLImplementation()) {
     case kGLImplementationDesktopGL:
@@ -162,16 +222,22 @@ bool InitializeGLOneOffPlatform() {
         return false;
       }
       return true;
+    case kGLImplementationEGLGLES2Sugar:
+      if (!GLSurfaceEGL::InitializeOneOffSugar(nullptr)) {
+        LOG(ERROR) << "GLSurfaceEGLSugar::InitializeOneOff failed.";
+        return false;
+      }
+      return true;
     default:
       return true;
   }
 }
 
+
 bool InitializeStaticGLBindings(GLImplementation implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu
   // unit tests have initialized with kGLImplementationMock, we don't want to
   // later switch to another GL implementation.
-  DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
 
   // Allow the main thread or another to initialize these bindings
   // after instituting restrictions on I/O. Going forward they will
@@ -187,6 +253,9 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
     case kGLImplementationSwiftShaderGL:
     case kGLImplementationEGLGLES2:
       return InitializeStaticEGLInternal();
+    case kGLImplementationEGLGLES2Sugar:
+      SetGLImplementation(implementation);
+      return InitializeStaticEGLInternalSugar();
     case kGLImplementationMockGL:
     case kGLImplementationStubGL:
       SetGLImplementation(implementation);

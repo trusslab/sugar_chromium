@@ -18,9 +18,11 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_version_info.h"
 
+
 namespace gl {
 
 void DriverGL::InitializeStaticBindings() {
+
   fn.glActiveTextureFn = reinterpret_cast<glActiveTextureProc>(
       GetGLProcAddress("glActiveTexture"));
   fn.glApplyFramebufferAttachmentCMAAINTELFn = 0;

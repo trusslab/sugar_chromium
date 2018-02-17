@@ -166,7 +166,24 @@
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gl/gl_switches.h"
+#include "v8/include/v8.h"
+#include "content/renderer/gpu/render_gpu_channel_host_factory.h"
+#include "content/browser/gpu/gpu_process_host.h"
+#include "content/browser/browser_main_loop.h" 
+#include "content/browser/gpu/gpu_data_manager_impl.h"
+#if defined(USE_AURA) || (defined(OS_MACOSX) && !defined(OS_IOS))
+#include "content/browser/compositor/image_transport_factory.h"
+#endif
 
+#if defined(USE_AURA)
+#include "content/public/browser/context_factory.h"
+#include "ui/aura/env.h"
+#endif
+
+#if !defined(OS_IOS)
+#include "content/browser/renderer_host/render_process_host_impl.h"
+#endif
+#include "base/debug/stack_trace.h"
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
 #include "content/renderer/android/synchronous_compositor_filter.h"
@@ -211,6 +228,11 @@
 #else
 #include <malloc.h>
 #endif
+
+#include "base/threading/thread_task_runner_handle.h"  
+#include "base/callback.h"
+#include "base/synchronization/waitable_event.h"
+#include "base/prints.h"
 
 using base::ThreadRestrictions;
 using blink::WebDocument;
@@ -390,6 +412,32 @@ scoped_refptr<ui::ContextProviderCommandBuffer> CreateOffscreenContext(
       GURL("chrome://gpu/RenderThreadImpl::CreateOffscreenContext/" +
            ui::command_buffer_metrics::ContextTypeToString(type)),
       automatic_flushes, support_locking, limits, attributes, nullptr, type));
+}
+
+scoped_refptr<ui::ContextProviderCommandBuffer> CreateOffscreenContext(
+    scoped_refptr<gpu::GpuChannelHost> gpu_channel_host,
+    const gpu::SharedMemoryLimits& limits,
+    bool support_locking,
+    ui::command_buffer_metrics::ContextType type,
+    int32_t stream_id,
+    gpu::GpuStreamPriority stream_priority,
+	bool render_compositor) {
+  DCHECK(gpu_channel_host);
+  gpu::gles2::ContextCreationAttribHelper attributes;
+  attributes.alpha_size = -1;
+  attributes.depth_size = 0;
+  attributes.stencil_size = 0;
+  attributes.samples = 0;
+  attributes.sample_buffers = 0;
+  attributes.bind_generates_resource = false;
+  attributes.lose_context_when_out_of_memory = true;
+  const bool automatic_flushes = false;
+  return make_scoped_refptr(new ui::ContextProviderCommandBuffer(
+      std::move(gpu_channel_host), stream_id, stream_priority,
+      gpu::kNullSurfaceHandle,
+      GURL("chrome://gpu/RenderThreadImpl::CreateOffscreenContext/" +
+           ui::command_buffer_metrics::ContextTypeToString(type)),
+      automatic_flushes, support_locking, limits, attributes, nullptr, type, render_compositor));
 }
 
 bool IsRunningInMash() {
@@ -897,6 +945,7 @@ void RenderThreadImpl::Init(
   // redirection experiment concludes https://crbug.com/622400.
   if (!command_line.HasSwitch(switches::kSingleProcess))
     base::SequencedWorkerPool::EnableForProcess();
+
 }
 
 RenderThreadImpl::~RenderThreadImpl() {
@@ -1395,6 +1444,7 @@ media::GpuVideoAcceleratorFactories* RenderThreadImpl::GetGpuFactories() {
   return gpu_factories_.back().get();
 }
 
+
 scoped_refptr<ui::ContextProviderCommandBuffer>
 RenderThreadImpl::SharedMainThreadContextProvider() {
   DCHECK(IsMainThread());
@@ -1697,6 +1747,53 @@ static size_t GetMallocUsage() {
 }  // namespace
 #endif
 
+int RenderThreadImpl::RendererGpuThreadStarted() {
+  TRACE_EVENT0("startup", "RenderThreadImpl::RendererGpuThreadStarted");
+
+  indexed_db_thread_.reset(new base::Thread("IndexedDB in RendererGpuThread"));
+  indexed_db_thread_->Start();
+
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+#endif
+
+  bool always_uses_gpu = true;
+  bool established_gpu_channel = false;
+#if defined(OS_ANDROID)
+  established_gpu_channel = false;
+  always_uses_gpu = ShouldStartGpuProcessOnBrowserStartup();
+  RenderGpuChannelHostFactory::Initialize(established_gpu_channel);
+  ContextProviderFactoryImpl::Initialize(
+      RenderGpuChannelHostFactory::instance());
+  ui::ContextProviderFactory::SetInstance(
+      ContextProviderFactoryImpl::GetInstance());
+#elif defined(USE_AURA) || defined(OS_MACOSX)
+  established_gpu_channel = true;
+  if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor()) {
+    established_gpu_channel = always_uses_gpu = false;
+  }
+  RenderGpuChannelHostFactory::Initialize(established_gpu_channel);
+  gpu::GpuChannelEstablishFactory* factory = RenderGpuChannelHostFactory::instance();
+  DCHECK(factory);
+  ImageTransportFactory::Terminate();
+  ImageTransportFactory::Initialize();
+  ImageTransportFactory::GetInstance()->SetGpuChannelEstablishFactory(factory);
+#if defined(USE_AURA)
+#endif  
+#endif  
+
+  base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
+      BrowserGpuMemoryBufferManager::current(), "BrowserGpuMemoryBufferManager",
+      ChildProcess::current() -> io_task_runner());
+
+  mojo_ipc_support_.reset(new mojo::edk::ScopedIPCSupport(GetIOTaskRunner(),
+      mojo::edk::ScopedIPCSupport::ShutdownPolicy::FAST));  
+  return 0;
+}
+
+bool RenderThreadImpl::UsingInProcessGpu() const {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) ||
+         base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU);
+}
 void RenderThreadImpl::GetRendererMemoryMetrics(
     RendererMemoryMetrics* memory_metrics) const {
   DCHECK(memory_metrics);
@@ -1840,6 +1937,15 @@ scoped_refptr<gpu::GpuChannelHost> RenderThreadImpl::EstablishGpuChannelSync() {
   return gpu_channel_;
 }
 
+scoped_refptr<gpu::GpuThreadHost> RenderThreadImpl::EstablishGpuThreadChannel() {
+  DCHECK(render_gpu_thread_host_);
+  TRACE_EVENT0("gpu", "RenderThreadImpl::EstablishGpuThreadChannel");
+
+  gpu::GpuThreadChannelManager* gpu_thread_channel_manager = render_gpu_thread_host_ -> gpu_thread_channel_manager();
+  gpu_thread_channel_ = gpu_thread_channel_manager->EstablishThreadChannel(0, true, true, true); 
+  return gpu_thread_channel_;
+}
+
 std::unique_ptr<cc::CompositorFrameSink>
 RenderThreadImpl::CreateCompositorFrameSink(
     const cc::FrameSinkId& frame_sink_id,
@@ -1977,6 +2083,7 @@ RenderThreadImpl::RequestCopyOfOutputForLayoutTest(
   DCHECK(layout_test_deps_);
   return layout_test_deps_->RequestCopyOfOutput(routing_id, std::move(request));
 }
+
 
 blink::WebMediaStreamCenter* RenderThreadImpl::CreateMediaStreamCenter(
     blink::WebMediaStreamCenterClient* client) {
@@ -2220,6 +2327,26 @@ RenderThreadImpl::GetMediaThreadTaskRunner() {
   return media_thread_->task_runner();
 }
 
+scoped_refptr<base::SingleThreadTaskRunner>
+RenderThreadImpl::GetGpuThreadTaskRunner() {
+  DCHECK(message_loop()->task_runner()->BelongsToCurrentThread());
+  if (!gpu_thread_) {
+    gpu_thread_.reset(new base::Thread("Renderer::Gpu"));
+    gpu_thread_->Start();
+	render_gpu_thread_host_ = new RenderGpuThreadHost();
+	base::WaitableEvent complete(base::WaitableEvent::ResetPolicy::MANUAL, base::WaitableEvent::InitialState::NOT_SIGNALED);
+	bool sent = gpu_thread_->task_runner()->PostTask(FROM_HERE, base::Bind(&RenderGpuThreadHost::Initialize, base::Unretained(render_gpu_thread_host_.get()), *base::CommandLine::ForCurrentProcess(), GetRenderThreadTaskRunner(), &complete));
+	complete.Wait();
+    DCHECK(sent);
+  }
+  return gpu_thread_->task_runner();
+}
+
+scoped_refptr<base::SingleThreadTaskRunner> 
+RenderThreadImpl::GetRenderThreadTaskRunner() {
+  return main_message_loop_ ? main_message_loop_->task_runner() : nullptr;
+}
+
 base::TaskRunner* RenderThreadImpl::GetWorkerTaskRunner() {
   return categorized_worker_pool_.get();
 }
@@ -2255,7 +2382,7 @@ RenderThreadImpl::SharedCompositorWorkerContextProvider() {
   shared_worker_context_provider_ = CreateOffscreenContext(
       std::move(gpu_channel_host), gpu::SharedMemoryLimits(), support_locking,
       ui::command_buffer_metrics::RENDER_WORKER_CONTEXT, stream_id,
-      stream_priority);
+      stream_priority, true);
   if (!shared_worker_context_provider_->BindToCurrentThread())
     shared_worker_context_provider_ = nullptr;
   return shared_worker_context_provider_;

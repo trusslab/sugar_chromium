@@ -88,7 +88,9 @@ bool PickleIterator::ReadBool(bool* result) {
 bool PickleIterator::ReadInt(int* result) {
   return ReadBuiltinType(result);
 }
-
+bool PickleIterator::ReadEglImageKHR(void** result) {
+  return ReadBuiltinType(result);
+}
 bool PickleIterator::ReadLong(long* result) {
   // Always read long as a 64-bit value to ensure compatibility between 32-bit
   // and 64-bit processes.
@@ -100,7 +102,6 @@ bool PickleIterator::ReadLong(long* result) {
   *result = base::checked_cast<long>(result_int64);
   return true;
 }
-
 bool PickleIterator::ReadUInt16(uint16_t* result) {
   return ReadBuiltinType(result);
 }

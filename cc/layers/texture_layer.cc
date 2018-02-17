@@ -17,7 +17,6 @@
 #include "cc/resources/single_release_callback_impl.h"
 #include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host.h"
-
 namespace cc {
 
 scoped_refptr<TextureLayer> TextureLayer::CreateForMailbox(
@@ -194,7 +193,6 @@ bool TextureLayer::Update() {
       updated = true;
     }
   }
-
   // SetTextureMailbox could be called externally and the same mailbox used for
   // different textures.  Such callers notify this layer that the texture has
   // changed by calling SetNeedsDisplay, so check for that here.

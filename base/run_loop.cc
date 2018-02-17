@@ -8,6 +8,8 @@
 #include "base/tracked_objects.h"
 #include "build/build_config.h"
 
+#include "base/prints.h"
+
 namespace base {
 
 RunLoop::RunLoop()
@@ -27,8 +29,9 @@ RunLoop::~RunLoop() {
 
 void RunLoop::Run() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!BeforeRun())
-    return;
+  if (!BeforeRun()) {
+	return;
+  }
 
   // Use task stopwatch to exclude the loop run time from the current task, if
   // any.

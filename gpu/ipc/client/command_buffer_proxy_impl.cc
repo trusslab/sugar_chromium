@@ -35,6 +35,13 @@
 #include "gpu/ipc/client/gpu_process_hosted_ca_layer_tree_params.h"
 #endif
 
+#include <sys/syscall.h>
+#include "base/synchronization/waitable_event.h"
+
+#include "gpu/itc/client/gpu_thread_host.h"
+#include "gpu/itc/service/gpu_thread_channel.h"
+#include "base/prints.h"
+
 namespace gpu {
 
 namespace {
@@ -66,6 +73,58 @@ CommandBufferProxyImpl::CommandBufferProxyImpl(int channel_id,
   DCHECK_NE(stream_id, GPU_STREAM_INVALID);
 }
 
+CommandBufferProxyImpl::CommandBufferProxyImpl(bool render_compositor,
+                                               int channel_id,
+                                               int32_t route_id,
+                                               int32_t stream_id)
+    : lock_(nullptr),
+      gpu_control_client_(nullptr),
+      command_buffer_id_(CommandBufferProxyID(channel_id, route_id)),
+      route_id_(route_id),
+      stream_id_(stream_id),
+      flush_count_(0),
+      last_put_offset_(-1),
+      last_barrier_put_offset_(-1),
+      next_fence_sync_release_(1),
+      flushed_fence_sync_release_(0),
+      verified_fence_sync_release_(0),
+      next_signal_id_(0),
+      weak_this_(AsWeakPtr()),
+	  render_compositor_(render_compositor) {
+  DCHECK(route_id);
+  DCHECK_NE(stream_id, GPU_STREAM_INVALID);
+}
+
+CommandBufferProxyImpl::CommandBufferProxyImpl(
+                      int channel_id,
+                      int32_t route_id,
+                      int32_t stream_id,
+					  bool webgl,
+					  scoped_refptr<base::SingleThreadTaskRunner> gpu_thread_task_runner,
+					  scoped_refptr<GpuChannelHost> compositor_channel,
+					  int32_t compositor_route_id)
+    : lock_(nullptr),
+      gpu_control_client_(nullptr),
+      command_buffer_id_(CommandBufferProxyID(channel_id, route_id)),
+      route_id_(route_id),
+      stream_id_(stream_id),
+      flush_count_(0),
+      last_put_offset_(-1),
+      last_barrier_put_offset_(-1),
+      next_fence_sync_release_(1),
+      flushed_fence_sync_release_(0),
+      verified_fence_sync_release_(0),
+      next_signal_id_(0),
+      weak_this_(AsWeakPtr()),
+	  webgl_(webgl),
+	  gpu_thread_task_runner_(gpu_thread_task_runner),
+	  gpu_thread_(std::move(gpu_thread_task_runner)),
+	  compositor_channel_(compositor_channel),
+	  compositor_route_id_(compositor_route_id) {
+  DCHECK(route_id);
+  DCHECK_NE(stream_id, GPU_STREAM_INVALID);
+}
+
 // static
 std::unique_ptr<CommandBufferProxyImpl> CommandBufferProxyImpl::Create(
     scoped_refptr<GpuChannelHost> host,
@@ -93,6 +152,73 @@ std::unique_ptr<CommandBufferProxyImpl> CommandBufferProxyImpl::Create(
   std::unique_ptr<CommandBufferProxyImpl> command_buffer = base::WrapUnique(
       new CommandBufferProxyImpl(host->channel_id(), route_id, stream_id));
   if (!command_buffer->Initialize(std::move(host), std::move(init_params),
+                                  std::move(task_runner)))
+    return nullptr;
+
+  return command_buffer;
+}
+
+std::unique_ptr<CommandBufferProxyImpl> CommandBufferProxyImpl::CreateForWebgl(
+    scoped_refptr<GpuThreadHost> host,
+    gpu::SurfaceHandle surface_handle,
+    CommandBufferProxyImpl* share_group,
+    int32_t stream_id,
+    gpu::GpuStreamPriority stream_priority,
+    const gpu::gles2::ContextCreationAttribHelper& attribs,
+    const GURL& active_url,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+	scoped_refptr<base::SingleThreadTaskRunner> gpu_thread_task_runner,
+	scoped_refptr<GpuChannelHost> compositor_channel,
+	int32_t compositor_route_id) {
+  DCHECK(!share_group || (stream_id == share_group->stream_id_));
+  TRACE_EVENT1("gpu", "GpuChannelHost::CreateViewCommandBuffer",
+               "surface_handle", surface_handle);
+
+  GPUCreateCommandBufferConfig init_params;
+  init_params.surface_handle = surface_handle;
+  init_params.share_group_id =
+      share_group ? share_group->route_id_ : MSG_ROUTING_NONE;
+  init_params.stream_id = stream_id;
+  init_params.stream_priority = stream_priority;
+  init_params.attribs = attribs;
+  init_params.active_url = active_url;
+
+  int32_t route_id = host->GenerateRouteID();
+  std::unique_ptr<CommandBufferProxyImpl> command_buffer = base::WrapUnique(
+      new CommandBufferProxyImpl(0, route_id, stream_id, true, gpu_thread_task_runner, compositor_channel, compositor_route_id));
+  if (!command_buffer->InitializeForWebgl(std::move(host), std::move(init_params),
+                                  std::move(task_runner)))
+    return nullptr;
+
+  return command_buffer;
+}
+
+std::unique_ptr<CommandBufferProxyImpl> CommandBufferProxyImpl::CreateForRenderCompositor(
+    scoped_refptr<GpuChannelHost> host,
+    gpu::SurfaceHandle surface_handle,
+    CommandBufferProxyImpl* share_group,
+    int32_t stream_id,
+    gpu::GpuStreamPriority stream_priority,
+    const gpu::gles2::ContextCreationAttribHelper& attribs,
+    const GURL& active_url,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
+  DCHECK(!share_group || (stream_id == share_group->stream_id_));
+  TRACE_EVENT1("gpu", "GpuChannelHost::CreateViewCommandBuffer",
+               "surface_handle", surface_handle);
+
+  GPUCreateCommandBufferConfig init_params;
+  init_params.surface_handle = surface_handle;
+  init_params.share_group_id =
+      share_group ? share_group->route_id_ : MSG_ROUTING_NONE;
+  init_params.stream_id = stream_id;
+  init_params.stream_priority = stream_priority;
+  init_params.attribs = attribs;
+  init_params.active_url = active_url;
+
+  int32_t route_id = host->GenerateRouteID();
+  std::unique_ptr<CommandBufferProxyImpl> command_buffer = base::WrapUnique(
+      new CommandBufferProxyImpl(true, host->channel_id(), route_id, stream_id));
+  if (!command_buffer->InitializeForRenderCompositor(std::move(host), std::move(init_params),
                                   std::move(task_runner)))
     return nullptr;
 
@@ -242,6 +368,79 @@ bool CommandBufferProxyImpl::Initialize(
   return true;
 }
 
+bool CommandBufferProxyImpl::InitializeForWebgl(
+    scoped_refptr<GpuThreadHost> channel,
+    const GPUCreateCommandBufferConfig& config,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
+  DCHECK(!gpu_thread_host_);
+  TRACE_EVENT0("gpu", "CommandBufferProxyImpl::InitializeForWebgl");
+  shared_state_ = new gpu::CommandBufferSharedState();
+
+  shared_state()->Initialize();
+
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "125248 CommandBufferProxyImpl::InitializeForWebgl"));
+
+  gpu_thread_host_ = std::move(channel);
+  gpu_thread_host_->SetGpuThreadTaskRunner(gpu_thread_task_runner_);
+
+  bool result = false;
+  base::WaitableEvent complete(base::WaitableEvent::ResetPolicy::MANUAL, base::WaitableEvent::InitialState::NOT_SIGNALED);
+  bool sent = gpu_thread_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnCreateCommandBuffer, gpu_thread_host_->channel(), &complete, config, route_id_, shared_state_, &result, &capabilities_, compositor_channel_, compositor_route_id_));
+  complete.Wait();
+  if (!sent || !result) {
+    DLOG(ERROR) << "Failed to send GpuChannelMsg_CreateCommandBuffer.";
+    return false;
+  }
+
+  callback_thread_ = std::move(task_runner);
+
+  return true;
+}
+
+bool CommandBufferProxyImpl::InitializeForRenderCompositor(
+    scoped_refptr<GpuChannelHost> channel,
+    const GPUCreateCommandBufferConfig& config,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
+  DCHECK(!channel_);
+  TRACE_EVENT0("gpu", "CommandBufferProxyImpl::Initialize");
+  shared_state_shm_ =
+      channel->factory()->AllocateSharedMemory(sizeof(*shared_state()));
+  if (!shared_state_shm_)
+    return false;
+
+  if (!shared_state_shm_->Map(sizeof(*shared_state())))
+    return false;
+
+  shared_state()->Initialize();
+
+  base::SharedMemoryHandle handle =
+      channel->ShareToGpuProcess(shared_state_shm_->handle());
+  if (!base::SharedMemory::IsHandleValid(handle))
+    return false;
+
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "125248 CommandBufferProxyImpl::Initialize"));
+
+  channel->AddRouteWithTaskRunner(route_id_, AsWeakPtr(), task_runner);
+
+  bool result = false;
+  bool sent = channel->Send(new GpuChannelMsg_CreateCommandBufferOutProcessSync(
+      config, route_id_, handle, getpid(), &result, &capabilities_));
+  if (!sent || !result) {
+    DLOG(ERROR) << "Failed to send GpuChannelMsg_CreateCommandBuffer.";
+    channel->RemoveRoute(route_id_);
+    return false;
+  }
+
+  channel_ = std::move(channel);
+  callback_thread_ = std::move(task_runner);
+
+  return true;
+}
+
 CommandBuffer::State CommandBufferProxyImpl::GetLastState() {
   base::AutoLock lock(last_state_lock_);
   TryUpdateState();
@@ -261,23 +460,41 @@ void CommandBufferProxyImpl::Flush(int32_t put_offset) {
   last_put_offset_ = put_offset;
   last_barrier_put_offset_ = put_offset;
 
-  if (channel_) {
-    uint32_t highest_verified_flush_id;
-    const uint32_t flush_id = channel_->OrderingBarrier(
-        route_id_, stream_id_, put_offset, ++flush_count_, latency_info_,
-        put_offset_changed, true, &highest_verified_flush_id);
-    if (put_offset_changed) {
-      DCHECK(flush_id);
-      const uint64_t fence_sync_release = next_fence_sync_release_ - 1;
-      if (fence_sync_release > flushed_fence_sync_release_) {
-        flushed_fence_sync_release_ = fence_sync_release;
-        flushed_release_flush_id_.push(
-            std::make_pair(fence_sync_release, flush_id));
+  if (webgl_) {
+    if (gpu_thread_host_) {
+      uint32_t highest_verified_flush_id;
+      const uint32_t flush_id = gpu_thread_host_->OrderingBarrier(
+          route_id_, stream_id_, put_offset, ++flush_count_, latency_info_,
+          put_offset_changed, true, &highest_verified_flush_id);
+      if (put_offset_changed) {
+        DCHECK(flush_id);
+        const uint64_t fence_sync_release = next_fence_sync_release_ - 1;
+        if (fence_sync_release > flushed_fence_sync_release_) {
+          flushed_fence_sync_release_ = fence_sync_release;
+          flushed_release_flush_id_.push(
+              std::make_pair(fence_sync_release, flush_id));
+        }
       }
+      CleanupFlushedReleases(highest_verified_flush_id);
     }
-    CleanupFlushedReleases(highest_verified_flush_id);
+  } else {
+    if (channel_) {
+      uint32_t highest_verified_flush_id;
+      const uint32_t flush_id = channel_->OrderingBarrier(
+          route_id_, stream_id_, put_offset, ++flush_count_, latency_info_,
+          put_offset_changed, true, &highest_verified_flush_id);
+      if (put_offset_changed) {
+        DCHECK(flush_id);
+        const uint64_t fence_sync_release = next_fence_sync_release_ - 1;
+        if (fence_sync_release > flushed_fence_sync_release_) {
+          flushed_fence_sync_release_ = fence_sync_release;
+          flushed_release_flush_id_.push(
+              std::make_pair(fence_sync_release, flush_id));
+        }
+      }
+      CleanupFlushedReleases(highest_verified_flush_id);
+    }
   }
-
   if (put_offset_changed)
     latency_info_.clear();
 }
@@ -341,7 +558,10 @@ void CommandBufferProxyImpl::SetNeedsVSync(bool needs_vsync) {
   if (last_state_.error != gpu::error::kNoError)
     return;
 
-  Send(new GpuCommandBufferMsg_SetNeedsVSync(route_id_, needs_vsync));
+  if (webgl_) {
+  } else {
+    Send(new GpuCommandBufferMsg_SetNeedsVSync(route_id_, needs_vsync));
+  }
 }
 
 gpu::CommandBuffer::State CommandBufferProxyImpl::WaitForTokenInRange(
@@ -363,10 +583,19 @@ gpu::CommandBuffer::State CommandBufferProxyImpl::WaitForTokenInRange(
   if (!InRange(start, end, last_state_.token) &&
       last_state_.error == gpu::error::kNoError) {
     gpu::CommandBuffer::State state;
-    if (Send(new GpuCommandBufferMsg_WaitForTokenInRange(route_id_, start, end,
-                                                         &state))) {
-      SetStateFromSyncReply(state);
-    }
+    if (webgl_) {
+      base::WaitableEvent complete(base::WaitableEvent::ResetPolicy::MANUAL, base::WaitableEvent::InitialState::NOT_SIGNALED);
+      bool sent = gpu_thread_task_runner_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnWaitForTokenInRange, gpu_thread_host_->channel(), &complete, route_id_, start, end, &state));
+	  complete.Wait();
+	  if (sent) {
+        SetStateFromSyncReply(state);
+      }
+	} else {
+      if (Send(new GpuCommandBufferMsg_WaitForTokenInRange(route_id_, start, end,
+                                                           &state))) {
+        SetStateFromSyncReply(state);
+      }
+	}
   }
   if (!InRange(start, end, last_state_.token) &&
       last_state_.error == gpu::error::kNoError) {
@@ -395,7 +624,14 @@ gpu::CommandBuffer::State CommandBufferProxyImpl::WaitForGetOffsetInRange(
   if (!InRange(start, end, last_state_.get_offset) &&
       last_state_.error == gpu::error::kNoError) {
     gpu::CommandBuffer::State state;
-    if (Send(new GpuCommandBufferMsg_WaitForGetOffsetInRange(route_id_, start,
+	if (webgl_){
+      base::WaitableEvent complete(base::WaitableEvent::ResetPolicy::MANUAL, base::WaitableEvent::InitialState::NOT_SIGNALED);
+      bool res = gpu_thread_task_runner_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnWaitForGetOffsetInRange, gpu_thread_host_->channel(), &complete, route_id_, start, end, &state));
+      complete.Wait();
+	  if (res)
+        SetStateFromSyncReply(state);
+	}
+    else if (Send(new GpuCommandBufferMsg_WaitForGetOffsetInRange(route_id_, start,
                                                              end, &state)))
       SetStateFromSyncReply(state);
   }
@@ -412,14 +648,21 @@ void CommandBufferProxyImpl::SetGetBuffer(int32_t shm_id) {
   base::AutoLock lock(last_state_lock_);
   if (last_state_.error != gpu::error::kNoError)
     return;
-
-  Send(new GpuCommandBufferMsg_SetGetBuffer(route_id_, shm_id));
+  if (webgl_) {
+    base::WaitableEvent complete(base::WaitableEvent::ResetPolicy::MANUAL, base::WaitableEvent::InitialState::NOT_SIGNALED);
+    gpu_thread_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnSetGetBuffer, gpu_thread_host_->channel(), &complete, route_id_, shm_id));	
+	complete.Wait();
+  } else {
+    Send(new GpuCommandBufferMsg_SetGetBuffer(route_id_, shm_id));
+  }
   last_put_offset_ = -1;
 }
 
 scoped_refptr<gpu::Buffer> CommandBufferProxyImpl::CreateTransferBuffer(
     size_t size,
     int32_t* id) {
+  if (webgl_) 
+    return CreateTransferBufferForWebgl(size, id);
   CheckLock();
   base::AutoLock lock(last_state_lock_);
   *id = -1;
@@ -456,10 +699,32 @@ scoped_refptr<gpu::Buffer> CommandBufferProxyImpl::CreateTransferBuffer(
   }
 
   Send(new GpuCommandBufferMsg_RegisterTransferBuffer(route_id_, new_id, handle,
-                                                      size));
+                                                        size));
   *id = new_id;
   scoped_refptr<gpu::Buffer> buffer(
       gpu::MakeBufferFromSharedMemory(std::move(shared_memory), size));
+  return buffer;
+}
+
+scoped_refptr<gpu::Buffer> CommandBufferProxyImpl::CreateTransferBufferForWebgl(
+    size_t size,
+    int32_t* id) {
+  CheckLock();
+  base::AutoLock lock(last_state_lock_);
+  *id = -1;
+
+  if (last_state_.error != gpu::error::kNoError) {
+	return NULL;
+  }
+
+  int32_t new_id = gpu_thread_host_->ReserveTransferBufferId();
+
+  void* mem = ::operator new(size);
+  std::unique_ptr<gpu::BufferBacking> backing(gpu::MakeBackingFromMemory(mem, size));
+  scoped_refptr<gpu::Buffer> buffer = new gpu::Buffer(std::move(backing));
+
+  gpu_thread_task_runner_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnRegisterTransferBuffer, gpu_thread_host_->channel(), route_id_, new_id, buffer, size));
+  *id = new_id;
   return buffer;
 }
 
@@ -469,7 +734,11 @@ void CommandBufferProxyImpl::DestroyTransferBuffer(int32_t id) {
   if (last_state_.error != gpu::error::kNoError)
     return;
 
-  Send(new GpuCommandBufferMsg_DestroyTransferBuffer(route_id_, id));
+  if (webgl_) {
+    gpu_thread_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnDestroyTransferBuffer, gpu_thread_host_->channel(), /*&complete, */route_id_, id));
+  } else {
+    Send(new GpuCommandBufferMsg_DestroyTransferBuffer(route_id_, id));
+  }
 }
 
 void CommandBufferProxyImpl::SetGpuControlClient(GpuControlClient* client) {
@@ -528,7 +797,11 @@ int32_t CommandBufferProxyImpl::CreateImage(ClientBuffer buffer,
   params.internal_format = internal_format;
   params.image_release_count = image_fence_sync;
 
-  Send(new GpuCommandBufferMsg_CreateImage(route_id_, params));
+  if (webgl_) {
+    gpu_thread_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnCreateImage, gpu_thread_host_->channel(), /*&complete, */route_id_,  params));
+  } else {
+    Send(new GpuCommandBufferMsg_CreateImage(route_id_, params));
+  }
 
   if (image_fence_sync) {
     gpu::SyncToken sync_token(GetNamespaceID(), GetExtraCommandBufferData(),
@@ -551,7 +824,11 @@ void CommandBufferProxyImpl::DestroyImage(int32_t id) {
   if (last_state_.error != gpu::error::kNoError)
     return;
 
-  Send(new GpuCommandBufferMsg_DestroyImage(route_id_, id));
+  if (webgl_) {
+    gpu_thread_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnDestroyImage, gpu_thread_host_->channel(), /*&complete, */route_id_, id));
+  } else {
+    Send(new GpuCommandBufferMsg_DestroyImage(route_id_, id));
+  }
 }
 
 uint32_t CommandBufferProxyImpl::CreateStreamTexture(uint32_t texture_id) {
@@ -562,8 +839,14 @@ uint32_t CommandBufferProxyImpl::CreateStreamTexture(uint32_t texture_id) {
 
   int32_t stream_id = channel_->GenerateRouteID();
   bool succeeded = false;
-  Send(new GpuCommandBufferMsg_CreateStreamTexture(route_id_, texture_id,
-                                                   stream_id, &succeeded));
+  if (webgl_) {
+    base::WaitableEvent complete(base::WaitableEvent::ResetPolicy::MANUAL, base::WaitableEvent::InitialState::NOT_SIGNALED);
+    gpu_thread_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnCreateStreamTexture, gpu_thread_host_->channel(), &complete, route_id_,  texture_id, stream_id, &succeeded));
+    complete.Wait();
+  } else {
+    Send(new GpuCommandBufferMsg_CreateStreamTexture(route_id_, texture_id,
+                                                     stream_id, &succeeded));
+  }
   if (!succeeded) {
     DLOG(ERROR) << "GpuCommandBufferMsg_CreateStreamTexture returned failure";
     return 0;
@@ -620,13 +903,22 @@ bool CommandBufferProxyImpl::IsFenceSyncFlushReceived(uint64_t release) {
   if (release <= flushed_fence_sync_release_) {
     DCHECK(!flushed_release_flush_id_.empty());
     // Check if it has already been validated by another context.
-    UpdateVerifiedReleases(channel_->GetHighestValidatedFlushID(stream_id_));
+	if (webgl_) {
+      UpdateVerifiedReleases(gpu_thread_host_->GetHighestValidatedFlushID(stream_id_));
+    } else {
+      UpdateVerifiedReleases(channel_->GetHighestValidatedFlushID(stream_id_));
+	}
     if (release <= verified_fence_sync_release_)
       return true;
 
     // Has not been validated, validate it now.
-    UpdateVerifiedReleases(
-        channel_->ValidateFlushIDReachedServer(stream_id_, false));
+	if (webgl_){
+      UpdateVerifiedReleases(
+          gpu_thread_host_->ValidateFlushIDReachedServer(stream_id_, false));
+	} else {
+      UpdateVerifiedReleases(
+          channel_->ValidateFlushIDReachedServer(stream_id_, false));
+	}
     return release <= verified_fence_sync_release_;
   }
 
@@ -649,8 +941,12 @@ void CommandBufferProxyImpl::SignalSyncToken(const gpu::SyncToken& sync_token,
     return;
 
   uint32_t signal_id = next_signal_id_++;
-  Send(new GpuCommandBufferMsg_SignalSyncToken(route_id_, sync_token,
+  if (webgl_) {
+    gpu_thread_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnSignalSyncToken, gpu_thread_host_->channel(), /*&complete, */route_id_,  sync_token, signal_id));
+  } else {
+    Send(new GpuCommandBufferMsg_SignalSyncToken(route_id_, sync_token,
                                                signal_id));
+  }
   signal_tasks_.insert(std::make_pair(signal_id, callback));
 }
 
@@ -692,7 +988,11 @@ void CommandBufferProxyImpl::SignalQuery(uint32_t query,
   // could do that, all they would do is to prevent some callbacks from getting
   // called, leading to stalled threads and/or memory leaks.
   uint32_t signal_id = next_signal_id_++;
-  Send(new GpuCommandBufferMsg_SignalQuery(route_id_, query, signal_id));
+  if (webgl_) {
+    gpu_thread_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnSignalQuery, gpu_thread_host_->channel(), /*&complete, */route_id_,  query, signal_id));
+  } else {
+    Send(new GpuCommandBufferMsg_SignalQuery(route_id_, query, signal_id));
+  }
   signal_tasks_.insert(std::make_pair(signal_id, callback));
 }
 
@@ -702,7 +1002,11 @@ void CommandBufferProxyImpl::TakeFrontBuffer(const gpu::Mailbox& mailbox) {
   if (last_state_.error != gpu::error::kNoError)
     return;
 
-  Send(new GpuCommandBufferMsg_TakeFrontBuffer(route_id_, mailbox));
+  if (webgl_) {
+    gpu_thread_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnTakeFrontBuffer, gpu_thread_host_->channel(), /*&complete, */route_id_,  mailbox));
+  } else {
+    Send(new GpuCommandBufferMsg_TakeFrontBuffer(route_id_, mailbox));
+  }
 }
 
 void CommandBufferProxyImpl::ReturnFrontBuffer(const gpu::Mailbox& mailbox,
@@ -712,12 +1016,20 @@ void CommandBufferProxyImpl::ReturnFrontBuffer(const gpu::Mailbox& mailbox,
   base::AutoLock lock(last_state_lock_);
   if (last_state_.error != gpu::error::kNoError)
     return;
-
-  Send(new GpuCommandBufferMsg_WaitSyncToken(route_id_, sync_token));
-  Send(new GpuCommandBufferMsg_ReturnFrontBuffer(route_id_, mailbox, is_lost));
+  
+  if (webgl_) {
+    gpu_thread_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnWaitSyncToken, gpu_thread_host_->channel(), /*&complete, */route_id_,  sync_token));
+    gpu_thread_->PostTask(FROM_HERE, base::Bind(&GpuThreadChannel::OnReturnFrontBuffer, gpu_thread_host_->channel(), /*&complete, */route_id_,  mailbox, is_lost));
+  } else {
+    Send(new GpuCommandBufferMsg_WaitSyncToken(route_id_, sync_token));
+    Send(new GpuCommandBufferMsg_ReturnFrontBuffer(route_id_, mailbox, is_lost));
+  }
 }
 
 bool CommandBufferProxyImpl::Send(IPC::Message* msg) {
+  if (webgl_) {
+    return true;
+  }
   DCHECK(channel_);
   last_state_lock_.AssertAcquired();
   DCHECK_EQ(gpu::error::kNoError, last_state_.error);
@@ -808,19 +1120,27 @@ void CommandBufferProxyImpl::UpdateVerifiedReleases(uint32_t verified_flush) {
 
 void CommandBufferProxyImpl::CleanupFlushedReleases(
     uint32_t highest_verified_flush_id) {
-  DCHECK(channel_);
+  DCHECK(channel_ || gpu_thread_host_);
   static const uint32_t kMaxUnverifiedFlushes = 1000;
   if (flushed_release_flush_id_.size() > kMaxUnverifiedFlushes) {
     // Prevent list of unverified flushes from growing indefinitely.
-    highest_verified_flush_id =
-        channel_->ValidateFlushIDReachedServer(stream_id_, false);
+	if (webgl_) {
+      highest_verified_flush_id =
+          gpu_thread_host_->ValidateFlushIDReachedServer(stream_id_, false);
+	} else {
+      highest_verified_flush_id =
+          channel_->ValidateFlushIDReachedServer(stream_id_, false);
+	}
   }
   UpdateVerifiedReleases(highest_verified_flush_id);
 }
 
 gpu::CommandBufferSharedState* CommandBufferProxyImpl::shared_state() const {
-  return reinterpret_cast<gpu::CommandBufferSharedState*>(
-      shared_state_shm_->memory());
+  if (!webgl_) {
+    return reinterpret_cast<gpu::CommandBufferSharedState*>(
+        shared_state_shm_->memory());
+  }
+  return shared_state_;	
 }
 
 void CommandBufferProxyImpl::OnSwapBuffersCompleted(
@@ -932,14 +1252,40 @@ void CommandBufferProxyImpl::DisconnectChannel() {
   CheckLock();
   // Prevent any further messages from being sent, and ensure we only call
   // the client for lost context a single time.
-  if (!channel_)
-    return;
-  channel_->FlushPendingStream(stream_id_);
-  channel_->Send(new GpuChannelMsg_DestroyCommandBuffer(route_id_));
-  channel_->RemoveRoute(route_id_);
-  channel_ = nullptr;
-  if (gpu_control_client_)
-    gpu_control_client_->OnGpuControlLostContext();
+  if (!webgl_) {
+    if (!channel_) {
+      return;
+	}
+    channel_->FlushPendingStream(stream_id_);
+    channel_->Send(new GpuChannelMsg_DestroyCommandBuffer(route_id_));
+    channel_->RemoveRoute(route_id_);
+    channel_ = nullptr;
+    if (gpu_control_client_) {
+      gpu_control_client_->OnGpuControlLostContext();
+    }
+  } else {
+    if (!gpu_thread_host_) {
+      return;
+	}
+    gpu_thread_host_->FlushPendingStream(stream_id_);
+    gpu_thread_host_->DestroyCommandBuffer(route_id_);
+    gpu_thread_host_ = nullptr;
+    if (gpu_control_client_) {
+      gpu_control_client_->OnGpuControlLostContext();
+	}
+  }
+}
+
+void CommandBufferProxyImpl::InsertFenceSyncByToken(
+                                  gpu::CommandBufferNamespace namespace_id,  
+                                  gpu::CommandBufferId command_buffer_id,
+                                  uint64_t release) {
+  DCHECK(render_compositor_);
+  channel_->Send(new GpuCommandBufferMsg_InsertFenceSyncByToken(
+  	                        route_id_,
+                            namespace_id, 
+                            command_buffer_id, 
+				            release));
 }
 
 }  // namespace gpu

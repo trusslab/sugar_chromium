@@ -2235,6 +2235,7 @@ void RenderWidget::setTouchAction(
   Send(new InputHostMsg_SetTouchAction(routing_id_, content_touch_action));
 }
 
+
 void RenderWidget::RegisterRenderFrameProxy(RenderFrameProxy* proxy) {
   render_frame_proxies_.AddObserver(proxy);
 }

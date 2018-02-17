@@ -29,11 +29,14 @@ MojoResult WatcherSet::Add(MojoHandleSignals signals,
                            uintptr_t context,
                            const HandleSignalsState& current_state) {
   auto it = watchers_.find(context);
-  if (it != watchers_.end())
-    return MOJO_RESULT_ALREADY_EXISTS;
+  if (it != watchers_.end()) {
+	return MOJO_RESULT_ALREADY_EXISTS;
+  }
 
-  if (!current_state.can_satisfy(signals))
+  if (!current_state.can_satisfy(signals)) {
     return MOJO_RESULT_FAILED_PRECONDITION;
+  }
+
 
   scoped_refptr<Watcher> watcher(new Watcher(signals, callback));
   watchers_.insert(std::make_pair(context, watcher));

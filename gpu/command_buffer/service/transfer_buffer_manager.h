@@ -30,6 +30,9 @@ class GPU_EXPORT TransferBufferManagerInterface :
   virtual bool RegisterTransferBuffer(
       int32_t id,
       std::unique_ptr<BufferBacking> buffer) = 0;
+  virtual bool RegisterTransferBuffer(
+      int32_t id,
+      scoped_refptr<Buffer> buffer) = 0;
   virtual void DestroyTransferBuffer(int32_t id) = 0;
   virtual scoped_refptr<Buffer> GetTransferBuffer(int32_t id) = 0;
 
@@ -53,6 +56,9 @@ class GPU_EXPORT TransferBufferManager
   bool RegisterTransferBuffer(
       int32_t id,
       std::unique_ptr<BufferBacking> buffer_backing) override;
+  bool RegisterTransferBuffer(
+      int32_t id,
+      scoped_refptr<Buffer> buffer_backing) override;
   void DestroyTransferBuffer(int32_t id) override;
   scoped_refptr<Buffer> GetTransferBuffer(int32_t id) override;
 

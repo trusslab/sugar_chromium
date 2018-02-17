@@ -76,7 +76,8 @@
 #include "base/posix/global_descriptors.h"
 #include "content/public/common/content_descriptors.h"
 #endif
-
+#include "base/debug/stack_trace.h"
+#include "base/prints.h"
 using tracked_objects::ThreadData;
 
 namespace content {
@@ -304,6 +305,7 @@ ChildThreadImpl::Options::Builder::Builder() {
 ChildThreadImpl::Options::Builder&
 ChildThreadImpl::Options::Builder::InBrowserProcess(
     const InProcessChildThreadParams& params) {
+  options_.webgl = params.webgl();
   options_.browser_process_io_runner = params.io_runner();
   options_.in_process_service_request_token = params.service_request_token();
   return *this;
@@ -362,7 +364,6 @@ ChildThreadImpl::ChildThreadImpl()
       weak_factory_(this) {
   Init(Options::Builder().Build());
 }
-
 ChildThreadImpl::ChildThreadImpl(const Options& options)
     : route_provider_binding_(this),
       router_(this),
@@ -379,7 +380,7 @@ scoped_refptr<base::SingleThreadTaskRunner> ChildThreadImpl::GetIOTaskRunner() {
   return ChildProcess::current()->io_task_runner();
 }
 
-void ChildThreadImpl::ConnectChannel() {
+void ChildThreadImpl::ConnectChannel(const Options& options) {
   std::string channel_token;
   mojo::ScopedMessagePipeHandle handle;
   if (!IsInBrowserProcess()) {
@@ -403,7 +404,7 @@ void ChildThreadImpl::ConnectChannel() {
   DCHECK(handle.is_valid());
   channel_->Init(
       IPC::ChannelMojo::CreateClientFactory(
-          std::move(handle), ChildProcess::current()->io_task_runner()),
+          options.webgl, std::move(handle), ChildProcess::current()->io_task_runner()),
       true /* create_pipe_now */);
 }
 
@@ -418,9 +419,16 @@ void ChildThreadImpl::Init(const Options& options) {
   IPC::Logging::GetInstance();
 #endif
 
-  channel_ =
-      IPC::SyncChannel::Create(this, ChildProcess::current()->io_task_runner(),
-                               ChildProcess::current()->GetShutDownEvent());
+  
+  if (options.webgl) {
+	channel_ =
+        IPC::SyncChannel::Create(true, this, ChildProcess::current()->io_task_runner(),
+                                 ChildProcess::current()->GetShutDownEvent());
+  } else {
+    channel_ =
+        IPC::SyncChannel::Create(this, ChildProcess::current()->io_task_runner(),
+                                 ChildProcess::current()->GetShutDownEvent());
+  }
 #ifdef IPC_MESSAGE_LOG_ENABLED
   if (!IsInBrowserProcess())
     IPC::Logging::GetInstance()->SetIPCSender(this);
@@ -531,7 +539,7 @@ void ChildThreadImpl::Init(const Options& options) {
     channel_->AddFilter(startup_filter);
   }
 
-  ConnectChannel();
+  ConnectChannel(options);
 
   // This must always be done after ConnectChannel, because ConnectChannel() may
   // add a ConnectionFilter to the connection.

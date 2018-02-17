@@ -18,6 +18,9 @@ class CommandLine;
 
 namespace gpu {
 
+void GetGpuInfoFromCommandLine(gpu::GPUInfo& gpu_info,
+                               base::CommandLine* command_line);
+
 class GPU_EXPORT GpuSandboxHelper {
  public:
   virtual ~GpuSandboxHelper() {}
@@ -30,6 +33,7 @@ class GPU_EXPORT GpuSandboxHelper {
 class GPU_EXPORT GpuInit {
  public:
   GpuInit();
+  GpuInit(bool webgl_);
   ~GpuInit();
 
   void set_sandbox_helper(GpuSandboxHelper* helper) {
@@ -49,6 +53,8 @@ class GPU_EXPORT GpuInit {
   std::unique_ptr<GpuWatchdogThread> watchdog_thread_;
   GPUInfo gpu_info_;
   GpuFeatureInfo gpu_feature_info_;
+
+  bool webgl_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(GpuInit);
 };

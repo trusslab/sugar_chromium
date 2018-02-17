@@ -47,6 +47,7 @@
 #include "base/command_line.h"
 #include "gpu/command_buffer/client/gpu_switches.h"
 #endif
+#include "base/prints.h"
 
 namespace gpu {
 namespace gles2 {
@@ -192,6 +193,89 @@ GLES2Implementation::GLES2Implementation(
   memset(&reserved_ids_, 0, sizeof(reserved_ids_));
 }
 
+GLES2Implementation::GLES2Implementation(
+    GLES2CmdHelper* helper,
+    scoped_refptr<ShareGroup> share_group,
+    TransferBufferInterface* transfer_buffer,
+    bool bind_generates_resource,
+    bool lose_context_when_out_of_memory,
+    bool support_client_side_arrays,
+    GpuControl* gpu_control,
+	bool webgl,
+	GLES2Implementation* compositor_gles2_impl)
+    : helper_(helper),
+      transfer_buffer_(transfer_buffer),
+      chromium_framebuffer_multisample_(kUnknownExtensionStatus),
+      pack_alignment_(4),
+      pack_row_length_(0),
+      pack_skip_pixels_(0),
+      pack_skip_rows_(0),
+      unpack_alignment_(4),
+      unpack_row_length_(0),
+      unpack_image_height_(0),
+      unpack_skip_rows_(0),
+      unpack_skip_pixels_(0),
+      unpack_skip_images_(0),
+      active_texture_unit_(0),
+      bound_framebuffer_(0),
+      bound_read_framebuffer_(0),
+      bound_renderbuffer_(0),
+      current_program_(0),
+      bound_array_buffer_(0),
+      bound_copy_read_buffer_(0),
+      bound_copy_write_buffer_(0),
+      bound_pixel_pack_buffer_(0),
+      bound_pixel_unpack_buffer_(0),
+      bound_transform_feedback_buffer_(0),
+      bound_uniform_buffer_(0),
+      bound_pixel_pack_transfer_buffer_id_(0),
+      bound_pixel_unpack_transfer_buffer_id_(0),
+      error_bits_(0),
+      debug_(false),
+      lose_context_when_out_of_memory_(lose_context_when_out_of_memory),
+      support_client_side_arrays_(support_client_side_arrays),
+      use_count_(0),
+      flush_id_(0),
+      max_extra_transfer_buffer_size_(
+#if defined(OS_NACL)
+          0),
+#else
+          base::SysInfo::AmountOfPhysicalMemory() > 1024 * 1024 * 1024
+              ? base::saturated_cast<uint32_t>(
+                    base::SysInfo::AmountOfPhysicalMemory() / 20)
+              : 0),
+#endif
+      current_trace_stack_(0),
+      gpu_control_(gpu_control),
+      capabilities_(gpu_control->GetCapabilities()),
+      aggressively_free_resources_(false),
+      cached_extension_string_(nullptr),
+	  webgl_(webgl),
+	  compositor_gles2_impl_(compositor_gles2_impl),
+      weak_ptr_factory_(this) {
+  DCHECK(helper);
+  DCHECK(transfer_buffer);
+  DCHECK(gpu_control);
+
+  std::stringstream ss;
+  ss << std::hex << this;
+  this_in_hex_ = ss.str();
+
+  GPU_CLIENT_LOG_CODE_BLOCK({
+    debug_ = base::CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kEnableGPUClientLogging);
+  });
+
+  share_group_ =
+      (share_group ? std::move(share_group)
+                   : new ShareGroup(
+                         bind_generates_resource,
+                         gpu_control_->GetCommandBufferID().GetUnsafeValue()));
+  DCHECK(share_group_->bind_generates_resource() == bind_generates_resource);
+
+  memset(&reserved_ids_, 0, sizeof(reserved_ids_));
+}
+
 bool GLES2Implementation::Initialize(
     unsigned int starting_transfer_buffer_size,
     unsigned int min_transfer_buffer_size,
@@ -287,7 +371,9 @@ GLES2Implementation::~GLES2Implementation() {
   ClearMappedBufferRangeMap();
 
   // Release any per-context data in share group.
-  share_group_->FreeContext(this);
+  if (!webgl_) {
+    share_group_->FreeContext(this);
+  }
 
   buffer_tracker_.reset();
 
@@ -304,6 +390,9 @@ GLES2CmdHelper* GLES2Implementation::helper() const {
 }
 
 IdHandlerInterface* GLES2Implementation::GetIdHandler(int namespace_id) const {
+  if (webgl_) {
+    return compositor_gles2_impl_->GetIdHandler(namespace_id);
+  }
   return share_group_->GetIdHandler(namespace_id);
 }
 
@@ -1347,7 +1436,7 @@ void GLES2Implementation::RestoreArrayBuffer(bool restore) {
 
 void GLES2Implementation::DrawElements(
     GLenum mode, GLsizei count, GLenum type, const void* indices) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
+ GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glDrawElements("
       << GLES2Util::GetStringDrawMode(mode) << ", "
       << count << ", "
@@ -4489,8 +4578,8 @@ void GLES2Implementation::BindTextureHelper(GLenum target, GLuint texture) {
 }
 
 void GLES2Implementation::BindTextureStub(GLenum target, GLuint texture) {
-  helper_->BindTexture(target, texture);
-  if (share_group_->bind_generates_resource())
+  helper_->BindTexture(target, texture); 
+   if (share_group_->bind_generates_resource())
     helper_->CommandBufferHelper::OrderingBarrier();
 }
 
@@ -5864,6 +5953,8 @@ void GLES2Implementation::ProduceTextureCHROMIUM(GLenum target,
 
 void GLES2Implementation::ProduceTextureDirectCHROMIUM(
     GLuint texture, GLenum target, const GLbyte* data) {
+  if (webgl_) {
+  }
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glProduceTextureDirectCHROMIUM("
                      << static_cast<const void*>(data) << ")");
@@ -6056,6 +6147,8 @@ void GLES2Implementation::SetLostContextCallback(
 
 GLuint64 GLES2Implementation::InsertFenceSyncCHROMIUM() {
   const uint64_t release = gpu_control_->GenerateFenceSyncRelease();
+  if (webgl_) {
+  }
   helper_->InsertFenceSyncCHROMIUM(release);
   return release;
 }
@@ -6082,6 +6175,7 @@ void GLES2Implementation::GenSyncTokenCHROMIUM(GLuint64 fence_sync,
   sync_token_data.SetVerifyFlush();
   memcpy(sync_token, &sync_token_data, sizeof(sync_token_data));
 }
+
 
 void GLES2Implementation::GenUnverifiedSyncTokenCHROMIUM(GLuint64 fence_sync,
                                                          GLbyte* sync_token) {

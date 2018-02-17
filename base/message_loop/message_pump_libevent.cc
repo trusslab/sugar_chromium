@@ -130,7 +130,6 @@ MessagePumpLibevent::~MessagePumpLibevent() {
   }
   event_base_free(event_base_);
 }
-
 bool MessagePumpLibevent::WatchFileDescriptor(int fd,
                                               bool persistent,
                                               int mode,
@@ -157,7 +156,6 @@ bool MessagePumpLibevent::WatchFileDescriptor(int fd,
     // Ownership is transferred to the controller.
     evt.reset(new event);
   } else {
-    // Make sure we don't pick up any funky internal libevent masks.
     int old_interest_mask = evt.get()->ev_events &
         (EV_READ | EV_WRITE | EV_PERSIST);
 

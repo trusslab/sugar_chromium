@@ -523,8 +523,9 @@ InterfaceEndpointController* MultiplexRouter::AttachEndpointClient(
   InterfaceEndpoint* endpoint = endpoints_[id].get();
   endpoint->AttachClient(client, std::move(runner));
 
-  if (endpoint->peer_closed())
-    tasks_.push_back(Task::CreateNotifyErrorTask(endpoint));
+  if (endpoint->peer_closed()) {
+	tasks_.push_back(Task::CreateNotifyErrorTask(endpoint));
+  }
   ProcessTasks(NO_DIRECT_CLIENT_CALLS, nullptr);
 
   return endpoint;
@@ -672,9 +673,10 @@ bool MultiplexRouter::OnPeerAssociatedEndpointClosed(
   // PeerAssociatedEndpointClosedEvent control message in the queue, we will get
   // here and see that the endpoint has been marked as peer closed.
   if (!endpoint->peer_closed()) {
-    if (endpoint->client())
+    if (endpoint->client()) {
       tasks_.push_back(Task::CreateNotifyErrorTask(endpoint));
-    UpdateEndpointStateMayRemove(endpoint, PEER_ENDPOINT_CLOSED);
+    }
+	UpdateEndpointStateMayRemove(endpoint, PEER_ENDPOINT_CLOSED);
   }
 
   // No need to trigger a ProcessTasks() because it is already on the stack.
@@ -696,9 +698,9 @@ void MultiplexRouter::OnPipeConnectionError() {
     // because it may remove the corresponding value from the map.
     ++iter;
 
-    if (endpoint->client())
+    if (endpoint->client()) {
       tasks_.push_back(Task::CreateNotifyErrorTask(endpoint));
-
+	}
     UpdateEndpointStateMayRemove(endpoint, PEER_ENDPOINT_CLOSED);
   }
 
@@ -795,7 +797,7 @@ bool MultiplexRouter::ProcessNotifyErrorTask(
     base::SingleThreadTaskRunner* current_task_runner) {
   DCHECK(!current_task_runner || current_task_runner->BelongsToCurrentThread());
   DCHECK(!paused_);
-
+  
   AssertLockAcquired();
   InterfaceEndpoint* endpoint = task->endpoint_to_notify.get();
   if (!endpoint->client())

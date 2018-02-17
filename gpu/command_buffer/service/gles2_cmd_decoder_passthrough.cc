@@ -430,6 +430,19 @@ void GLES2DecoderPassthroughImpl::SetWaitFenceSyncCallback(
   wait_fence_sync_callback_ = callback;
 }
 
+void GLES2DecoderPassthroughImpl::SetCreateTextureSyncCallback(
+    const CreateTextureSyncCallback& callback) {}
+void GLES2DecoderPassthroughImpl::SetRemoveTextureSyncCallback(
+    const RemoveTextureSyncCallback& callback) {} 
+void GLES2DecoderPassthroughImpl::SetProduceTextureDirectSyncCallback(
+    const ProduceTextureDirectSyncCallback& callback) {}
+
+void GLES2DecoderPassthroughImpl::ProduceTextureRefSync(const char* func_name,
+                           bool clear,
+                           gles2::TextureRef* texture_ref,
+                           uint32_t target,
+                           Mailbox mailbox) {}
+
 void GLES2DecoderPassthroughImpl::SetDescheduleUntilFinishedCallback(
     const NoParamCallback& callback) {}
 

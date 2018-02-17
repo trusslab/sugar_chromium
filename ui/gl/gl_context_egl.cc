@@ -15,6 +15,8 @@
 #include "ui/gl/egl_util.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_surface_egl.h"
+#include "base/debug/stack_trace.h"
+#include "base/prints.h"
 
 #if defined(USE_X11)
 extern "C" {
@@ -45,6 +47,7 @@ extern "C" {
 using ui::GetLastEGLErrorString;
 
 namespace gl {
+
 
 GLContextEGL::GLContextEGL(GLShareGroup* share_group)
     : GLContextReal(share_group),
@@ -156,6 +159,7 @@ bool GLContextEGL::Initialize(GLSurface* compatible_surface,
   context_ = eglCreateContext(
       display_, config_, share_group() ? share_group()->GetHandle() : nullptr,
       context_attributes.data());
+
 
   if (!context_) {
     LOG(ERROR) << "eglCreateContext failed with error "

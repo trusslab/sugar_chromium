@@ -42,6 +42,10 @@
 #include "ui/gfx/mac/io_surface.h"
 #endif
 
+#include "gpu/command_buffer/common/command_buffer_id.h"
+#include "gpu/command_buffer/common/mailbox.h"
+#include "gpu/command_buffer/service/sync_point_manager.h"
+
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT GPU_EXPORT
 
@@ -102,6 +106,14 @@ IPC_SYNC_MESSAGE_CONTROL3_2(GpuChannelMsg_CreateCommandBuffer,
                             GPUCreateCommandBufferConfig /* init_params */,
                             int32_t /* route_id */,
                             base::SharedMemoryHandle /* shared_state */,
+                            bool /* result */,
+                            gpu::Capabilities /* capabilities */)
+
+IPC_SYNC_MESSAGE_CONTROL4_2(GpuChannelMsg_CreateCommandBufferOutProcessSync,
+                            GPUCreateCommandBufferConfig /* init_params */,
+                            int32_t /* route_id */,
+                            base::SharedMemoryHandle /* shared_state */,
+							int32_t /*renderer_pid*/,   
                             bool /* result */,
                             gpu::Capabilities /* capabilities */)
 
@@ -246,3 +258,31 @@ IPC_SYNC_MESSAGE_ROUTED2_1(GpuCommandBufferMsg_CreateStreamTexture,
 
 // Start or stop VSync sygnal production on GPU side (Windows only).
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SetNeedsVSync, bool /* needs_vsync */)
+
+IPC_MESSAGE_ROUTED3(GpuCommandBufferMsg_InsertFenceSyncByToken,
+                    gpu::CommandBufferNamespace /* namespace_id */,
+                    gpu::CommandBufferId /* command_buffer_id */,
+					uint64_t /* release */)
+
+IPC_MESSAGE_ROUTED2(GpuCommandBufferMsg_CreateOutProcessSyncPointClient,
+							gpu::CommandBufferNamespace,
+							gpu::CommandBufferId)
+
+IPC_SYNC_MESSAGE_ROUTED3_2(GpuCommandBufferMsg_OutProcessWaitFenceSync,
+                            gpu::CommandBufferNamespace /* namespace_id */,
+                            gpu::CommandBufferId /* command_buffer_id */,
+					        uint64_t /* release */,
+							bool /*already_released*/,
+							bool /*needs_pull_texture_updates*/)
+
+IPC_MESSAGE_ROUTED2(GpuCommandBufferMsg_CreateTextureSync,
+                    uint32_t /*client_id*/,
+                    uint32_t /*service_id*/)
+
+IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_RemoveTextureSync,
+                    uint32_t /*client_id*/)
+
+IPC_MESSAGE_ROUTED3(GpuCommandBufferMsg_ProduceTextureDirectSync,
+                    uint32_t /*client_id*/,
+                    uint32_t /*target*/,
+					gpu::Mailbox  /*data*/)

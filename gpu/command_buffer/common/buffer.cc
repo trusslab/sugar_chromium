@@ -35,6 +35,25 @@ void* SharedMemoryBufferBacking::GetMemory() const {
 
 size_t SharedMemoryBufferBacking::GetSize() const { return size_; }
 
+ThreadBufferBacking::ThreadBufferBacking(
+    void* memory,
+    size_t size)
+    : memory_(memory), size_(size) {}
+
+ThreadBufferBacking::~ThreadBufferBacking() {
+  ::operator delete (memory_);
+}
+
+bool ThreadBufferBacking::is_shared() const {
+  return true;
+}
+
+void* ThreadBufferBacking::GetMemory() const {
+  return memory_;
+}
+
+size_t ThreadBufferBacking::GetSize() const { return size_; }
+
 Buffer::Buffer(std::unique_ptr<BufferBacking> backing)
     : backing_(std::move(backing)),
       memory_(backing_->GetMemory()),

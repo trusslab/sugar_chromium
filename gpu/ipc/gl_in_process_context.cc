@@ -40,6 +40,8 @@
 #include "ui/gl/android/surface_texture.h"
 #endif
 
+#include "base/prints.h"
+
 namespace gpu {
 
 namespace {

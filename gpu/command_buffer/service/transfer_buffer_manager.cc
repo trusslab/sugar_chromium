@@ -21,6 +21,8 @@
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 
+#include "base/prints.h"
+
 using ::base::SharedMemory;
 
 namespace gpu {
@@ -76,6 +78,29 @@ bool TransferBufferManager::RegisterTransferBuffer(
   scoped_refptr<Buffer> buffer(new gpu::Buffer(std::move(buffer_backing)));
 
   // Check buffer alignment is sane.
+  DCHECK(!(reinterpret_cast<uintptr_t>(buffer->memory()) &
+           (kCommandBufferEntrySize - 1)));
+
+  if (buffer->backing()->is_shared())
+    shared_memory_bytes_allocated_ += buffer->size();
+  registered_buffers_[id] = buffer;
+
+  return true;
+}
+
+bool TransferBufferManager::RegisterTransferBuffer(
+    int32_t id,
+    scoped_refptr<Buffer> buffer) {
+  if (id <= 0) {
+    DVLOG(0) << "Cannot register transfer buffer with non-positive ID.";
+    return false;
+  }
+
+  if (registered_buffers_.find(id) != registered_buffers_.end()) {
+    DVLOG(0) << "Buffer ID already in use.";
+    return false;
+  }
+
   DCHECK(!(reinterpret_cast<uintptr_t>(buffer->memory()) &
            (kCommandBufferEntrySize - 1)));
 

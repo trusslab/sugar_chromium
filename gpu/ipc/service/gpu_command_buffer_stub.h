@@ -37,6 +37,8 @@
 #include "ui/gl/gpu_preference.h"
 #include "url/gurl.h"
 
+#include "gpu/command_buffer/common/buffer.h"
+
 namespace gl {
 class GLShareGroup;
 }
@@ -45,6 +47,9 @@ namespace gpu {
 struct Mailbox;
 struct SyncToken;
 class SyncPointClient;
+namespace gles2 {
+class TextureRef;
+}
 }
 
 struct GPUCreateCommandBufferConfig;
@@ -53,6 +58,8 @@ struct GpuCommandBufferMsg_CreateImage_Params;
 namespace gpu {
 
 class GpuChannel;
+class GpuThreadChannel;
+class GpuChannelHost;
 struct WaitForCommandState;
 
 class GPU_EXPORT GpuCommandBufferStub
@@ -79,6 +86,24 @@ class GPU_EXPORT GpuCommandBufferStub
     const GPUCreateCommandBufferConfig& init_params,
     int32_t route_id,
     std::unique_ptr<base::SharedMemory> shared_state_shm);
+
+  static std::unique_ptr<GpuCommandBufferStub> Create(
+    GpuThreadChannel* channel,
+    GpuCommandBufferStub* share_group,
+    const GPUCreateCommandBufferConfig& init_params,
+    int32_t route_id,
+    int32_t compositor_route_id,
+    gpu::CommandBufferSharedState* shared_state,
+	scoped_refptr<GpuChannelHost> compositor_channel);
+
+  static std::unique_ptr<GpuCommandBufferStub> Create(
+      GpuChannel* channel,
+      GpuCommandBufferStub* share_command_buffer_stub,
+      const GPUCreateCommandBufferConfig& init_params,
+      int32_t route_id,
+      std::unique_ptr<base::SharedMemory> shared_state_shm,
+      bool has_out_process_sync,
+	  int32_t renderer_pid);
 
   ~GpuCommandBufferStub() override;
 
@@ -134,13 +159,30 @@ class GPU_EXPORT GpuCommandBufferStub
   void MarkContextLost();
 
  private:
+  friend class GpuThreadChannel;
   GpuCommandBufferStub(GpuChannel* channel,
                        const GPUCreateCommandBufferConfig& init_params,
                        int32_t route_id);
 
+  GpuCommandBufferStub(GpuThreadChannel* channel,
+                       const GPUCreateCommandBufferConfig& init_params,
+                       int32_t route_id,
+					   int32_t compositor_route_id,
+	                   scoped_refptr<GpuChannelHost> compositor_channel);
+
+  GpuCommandBufferStub(GpuChannel* channel,
+                       const GPUCreateCommandBufferConfig& init_params,
+                       int32_t route_id,
+                       bool has_out_process_sync,
+					   int32_t renderer_pid);
+
   bool Initialize(GpuCommandBufferStub* share_group,
                   const GPUCreateCommandBufferConfig& init_params,
                   std::unique_ptr<base::SharedMemory> shared_state_shm);
+
+  bool Initialize(GpuCommandBufferStub* share_group,
+                  const GPUCreateCommandBufferConfig& init_params,
+                  gpu::CommandBufferSharedState* shared_state);
 
   GpuMemoryManager* GetMemoryManager() const;
 
@@ -150,6 +192,7 @@ class GPU_EXPORT GpuCommandBufferStub
 
   // Message handlers:
   void OnSetGetBuffer(int32_t shm_id, IPC::Message* reply_message);
+  void OnSetGetBufferForWebgl(int32_t shm_id);
   void OnTakeFrontBuffer(const Mailbox& mailbox);
   void OnReturnFrontBuffer(const Mailbox& mailbox, bool is_lost);
   void OnGetState(IPC::Message* reply_message);
@@ -159,12 +202,21 @@ class GPU_EXPORT GpuCommandBufferStub
   void OnWaitForGetOffsetInRange(int32_t start,
                                  int32_t end,
                                  IPC::Message* reply_message);
+  void OnWaitForTokenInRangeForWebgl(int32_t start,
+                                     int32_t end,
+	                                 gpu::CommandBuffer::State* state);
+  void OnWaitForGetOffsetInRangeForWebgl(int32_t start,
+                                         int32_t end,
+	                                     gpu::CommandBuffer::State* state);
   void OnAsyncFlush(int32_t put_offset,
                     uint32_t flush_count,
                     const std::vector<ui::LatencyInfo>& latency_info);
   void OnRegisterTransferBuffer(int32_t id,
                                 base::SharedMemoryHandle transfer_buffer,
                                 uint32_t size);
+  void OnRegisterTransferBufferForWebgl(int32_t id,
+                                        scoped_refptr<gpu::Buffer> buffer,
+                                        uint32_t size);
   void OnDestroyTransferBuffer(int32_t id);
   void OnGetTransferBuffer(int32_t id, IPC::Message* reply_message);
 
@@ -176,12 +228,27 @@ class GPU_EXPORT GpuCommandBufferStub
   void OnSignalQuery(uint32_t query, uint32_t id);
 
   void OnFenceSyncRelease(uint64_t release);
+  void OnInsertFenceSyncByToken(CommandBufferNamespace namespace_id, 
+                                CommandBufferId command_buffer_id, 
+								uint64_t release);
+  void OnCreateOutProcessSyncPointClient(CommandBufferNamespace namespace_id, 
+                                        CommandBufferId command_buffer_id);
+  void OnOutProcessWaitFenceSync(CommandBufferNamespace namespace_id,
+                                 CommandBufferId command_buffer_id,
+                                 uint64_t release,
+                                 bool* already_released,
+								 bool* needs_pull_texture_updates);
   bool OnWaitFenceSync(CommandBufferNamespace namespace_id,
+                       CommandBufferId command_buffer_id,
+                       uint64_t release);
+  bool OnWaitFenceSyncForWebgl(CommandBufferNamespace namespace_id,
                        CommandBufferId command_buffer_id,
                        uint64_t release);
   void OnWaitFenceSyncCompleted(CommandBufferNamespace namespace_id,
                                 CommandBufferId command_buffer_id,
                                 uint64_t release);
+  void OnOutProcessWaitFenceSyncCompleted(
+                                          uint64_t release);
 
   void OnDescheduleUntilFinished();
   void OnRescheduleAfterFinished();
@@ -211,14 +278,29 @@ class GPU_EXPORT GpuCommandBufferStub
 
   bool CheckContextLost();
   void CheckCompleteWaits();
+  void CheckCompleteWaitsForWebgl(CommandBuffer::State* s);
   void PullTextureUpdates(CommandBufferNamespace namespace_id,
                           CommandBufferId command_buffer_id,
                           uint32_t release);
 
+  void CreateTextureSync(GLuint client_id, GLuint service_id);
+  void RemoveTextureSync(GLuint client_id);
+
+  void OnCreateTextureSync(GLuint client_id, GLuint service_id);
+  void OnRemoveTextureSync(GLuint client_id);
+  void ProduceTextureDirectSync(uint32_t client, 
+                                uint32_t target, 
+                                const volatile void* data);
+  void OnProduceTextureDirectSync(GLuint client_id,
+                                  GLenum target,
+                                  Mailbox mailbox);
+
   // The lifetime of objects of this class is managed by a GpuChannel. The
   // GpuChannels destroy all the GpuCommandBufferStubs that they own when they
   // are destroyed. So a raw pointer is safe.
-  GpuChannel* const channel_;
+  GpuChannel* channel_;
+  
+  GpuThreadChannel* thread_channel_;
 
   // The group of contexts that share namespaces with this context.
   scoped_refptr<gles2::ContextGroup> context_group_;
@@ -229,12 +311,14 @@ class GPU_EXPORT GpuCommandBufferStub
   const CommandBufferId command_buffer_id_;
   const int32_t stream_id_;
   const int32_t route_id_;
+  int32_t compositor_route_id_ = 0;
   uint32_t last_flush_count_;
 
   std::unique_ptr<CommandBufferService> command_buffer_;
   std::unique_ptr<gles2::GLES2Decoder> decoder_;
   std::unique_ptr<CommandExecutor> executor_;
   std::unique_ptr<SyncPointClient> sync_point_client_;
+  std::unique_ptr<SyncPointClient> out_process_sync_point_client_;
   scoped_refptr<gl::GLSurface> surface_;
   scoped_refptr<gl::GLShareGroup> share_group_;
 
@@ -255,6 +339,11 @@ class GPU_EXPORT GpuCommandBufferStub
   std::unique_ptr<WaitForCommandState> wait_for_get_offset_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuCommandBufferStub);
+
+  bool webgl_ = false;
+  scoped_refptr<GpuChannelHost> compositor_channel_;
+  bool has_out_process_sync_ = false;
+  int32_t renderer_pid_ = 0;
 };
 
 }  // namespace gpu

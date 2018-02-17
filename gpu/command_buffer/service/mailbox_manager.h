@@ -9,7 +9,6 @@
 #include "base/memory/ref_counted.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/gpu_export.h"
-
 namespace gpu {
 
 struct GpuPreferences;
@@ -24,6 +23,8 @@ class GPU_EXPORT MailboxManager : public base::RefCounted<MailboxManager> {
  public:
   static scoped_refptr<MailboxManager> Create(
       const GpuPreferences& gpu_preferences);
+
+static scoped_refptr<MailboxManager> Create(const GpuPreferences& gpu_preferences, bool webgl);
 
   // Look up the texture definition from the named mailbox.
   virtual TextureBase* ConsumeTexture(const Mailbox& mailbox) = 0;
@@ -44,10 +45,8 @@ class GPU_EXPORT MailboxManager : public base::RefCounted<MailboxManager> {
  protected:
   MailboxManager() {}
   virtual ~MailboxManager() {}
-
  private:
   friend class base::RefCounted<MailboxManager>;
-
   DISALLOW_COPY_AND_ASSIGN(MailboxManager);
 };
 

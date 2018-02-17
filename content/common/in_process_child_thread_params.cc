@@ -13,6 +13,14 @@ InProcessChildThreadParams::InProcessChildThreadParams(
       service_request_token_(service_request_token) {}
 
 InProcessChildThreadParams::InProcessChildThreadParams(
+    bool webgl,
+	scoped_refptr<base::SingleThreadTaskRunner> io_runner,
+    const std::string& service_request_token)
+    : io_runner_(std::move(io_runner)),
+      service_request_token_(service_request_token),
+	  webgl_(webgl) {}
+
+InProcessChildThreadParams::InProcessChildThreadParams(
     const InProcessChildThreadParams& other) = default;
 
 InProcessChildThreadParams::~InProcessChildThreadParams() {

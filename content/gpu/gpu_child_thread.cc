@@ -49,6 +49,7 @@
 #if defined(USE_OZONE)
 #include "ui/ozone/public/ozone_platform.h"
 #endif
+#include "base/debug/stack_trace.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/throw_uncaught_exception.h"
@@ -191,11 +192,37 @@ GpuChildThread::GpuChildThread(
 #if defined(OS_WIN)
   target_services_ = NULL;
 #endif
-  DCHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kSingleProcess) ||
-         base::CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kInProcessGPU));
 
+  g_thread_safe_sender.Get() = thread_safe_sender();
+}
+
+GpuChildThread::GpuChildThread(
+    const InProcessChildThreadParams& params,
+    const gpu::GPUInfo& gpu_info,
+    const gpu::GpuFeatureInfo& gpu_feature_info,
+    gpu::GpuMemoryBufferFactory* gpu_memory_buffer_factory,
+	gpu::gles2::MailboxManager* mailbox_manager)
+    : ChildThreadImpl(ChildThreadImpl::Options::Builder()
+                          .InBrowserProcess(params)
+                          .AddStartupFilter(new GpuMemoryBufferMessageFilter(
+                              gpu_memory_buffer_factory))
+                          .ConnectToBrowser(true)
+                          .Build()),
+      dead_on_arrival_(false),
+	  mailbox_manager_(mailbox_manager),
+      gpu_info_(gpu_info),
+      in_browser_process_(true),
+	  webgl_(true),
+      gpu_service_(new ui::GpuService(gpu_info,
+                                      nullptr /* watchdog thread */,
+                                      gpu_memory_buffer_factory,
+                                      ChildProcess::current()->io_task_runner(),
+                                      gpu_feature_info)),
+      gpu_main_binding_(this) {
+#if defined(OS_WIN)
+  target_services_ = NULL;
+#endif
+  
   g_thread_safe_sender.Get() = thread_safe_sender();
 }
 
@@ -240,6 +267,7 @@ void GpuChildThread::CreateGpuMainService(
 bool GpuChildThread::Send(IPC::Message* msg) {
   // The GPU process must never send a synchronous IPC message to the browser
   // process. This could result in deadlock.
+  
   DCHECK(!msg->is_sync());
 
   return ChildThreadImpl::Send(msg);
@@ -266,6 +294,9 @@ bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
 }
 
 bool GpuChildThread::OnMessageReceived(const IPC::Message& msg) {
+  if(webgl_)
+    fprintf(stderr, "gpu_child_thread webgl success:[1]:%s\n", __PRETTY_FUNCTION__);
+  
   if (ChildThreadImpl::OnMessageReceived(msg))
     return true;
 
@@ -284,12 +315,13 @@ bool GpuChildThread::OnMessageReceived(const IPC::Message& msg) {
   if (handled)
     return true;
 
+
   return false;
 }
 
 void GpuChildThread::OnAssociatedInterfaceRequest(
     const std::string& name,
-    mojo::ScopedInterfaceEndpointHandle handle) {
+    mojo::ScopedInterfaceEndpointHandle handle) {  
   if (associated_interfaces_.CanBindRequest(name))
     associated_interfaces_.BindRequest(name, std::move(handle));
   else
@@ -336,9 +368,16 @@ void GpuChildThread::CreateGpuService(
   // Note SyncPointManager from ContentGpuClient cannot be owned by this.
   if (GetContentClient()->gpu())
     sync_point_manager = GetContentClient()->gpu()->GetSyncPointManager();
-  gpu_service_->InitializeWithHost(std::move(gpu_host), gpu_preferences,
+  if (webgl_){
+    gpu_service_->InitializeWithHost2(std::move(gpu_host), gpu_preferences,
+                                   sync_point_manager,
+								   ChildProcess::current()->GetShutDownEvent(),
+								   mailbox_manager_);
+  } else {
+    gpu_service_->InitializeWithHost(std::move(gpu_host), gpu_preferences,
                                    sync_point_manager,
                                    ChildProcess::current()->GetShutDownEvent());
+  }
   CHECK(gpu_service_->media_gpu_channel_manager());
 
   // Only set once per process instance.

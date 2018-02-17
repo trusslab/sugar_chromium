@@ -21,23 +21,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
   "version": "12.16",
   "entries": [
     {
-      "id": 1,
-      "description": "ATI Radeon X1900 is not compatible with WebGL on the Mac",
-      "webkit_bugs": [47028],
-      "os": {
-        "type": "macosx"
-      },
-      "vendor_id": "0x1002",
-      "device_id": ["0x7249"],
-      "multi_gpu_category": "any",
-      "features": [
-        "webgl",
-        "flash_3d",
-        "flash_stage3d",
-        "gpu_rasterization"
-      ]
-    },
-    {
       "id": 3,
       "description": "GL driver is software rendered. GPU acceleration is disabled",
       "cr_bugs": [59302, 315217],
@@ -59,42 +42,9 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "vendor_id": "0x8086",
       "device_id": ["0x27AE", "0x27A2"],
       "features": [
-        "webgl",
         "flash_3d",
         "flash_stage3d",
         "accelerated_2d_canvas"
-      ]
-    },
-    {
-      "id": 5,
-      "description": "ATI/AMD cards with older drivers in Linux are crash-prone",
-      "cr_bugs": [71381, 76428, 73910, 101225, 136240, 357314],
-      "os": {
-        "type": "linux"
-      },
-      "vendor_id": "0x1002",
-      "exceptions": [
-        {
-          "driver_vendor": ".*AMD.*",
-          "driver_version": {
-            "op": ">=",
-            "style": "lexical",
-            "value": "8.98"
-          }
-        },
-        {
-          "driver_vendor": "Mesa",
-          "driver_version": {
-            "op": ">=",
-            "value": "10.0.4"
-          }
-        },
-        {
-          "driver_vendor": ".*ANGLE.*"
-        }
-      ],
-      "features": [
-        "all"
       ]
     },
     {
@@ -121,7 +71,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "device_id": ["0x0393"],
       "multi_gpu_category": "any",
       "features": [
-        "webgl",
         "flash_3d",
         "flash_stage3d",
         "gpu_rasterization"
@@ -227,79 +176,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 27,
-      "description": "ATI/AMD cards with older drivers in Linux are crash-prone",
-      "cr_bugs": [95934, 94973, 136240, 357314],
-      "os": {
-        "type": "linux"
-      },
-      "gl_vendor": "ATI.*",
-      "exceptions": [
-        {
-          "driver_vendor": ".*AMD.*",
-          "driver_version": {
-            "op": ">=",
-            "style": "lexical",
-            "value": "8.98"
-          }
-        },
-        {
-          "driver_vendor": "Mesa",
-          "driver_version": {
-            "op": ">=",
-            "value": "10.0.4"
-          }
-        }
-      ],
-      "features": [
-        "all"
-      ]
-    },
-    {
-      "id": 28,
-      "description": "ATI/AMD cards with third-party drivers in Linux are crash-prone",
-      "cr_bugs": [95934, 94973, 357314],
-      "os": {
-        "type": "linux"
-      },
-      "gl_vendor": "X\\.Org.*",
-      "gl_renderer": ".*AMD.*",
-      "exceptions": [
-        {
-          "driver_vendor": "Mesa",
-          "driver_version": {
-            "op": ">=",
-            "value": "10.0.4"
-          }
-        }
-      ],
-      "features": [
-        "all"
-      ]
-    },
-    {
-      "id": 29,
-      "description": "ATI/AMD cards with third-party drivers in Linux are crash-prone",
-      "cr_bugs": [95934, 94973, 357314],
-      "os": {
-        "type": "linux"
-      },
-      "gl_vendor": "X\\.Org.*",
-      "gl_renderer": ".*ATI.*",
-      "exceptions": [
-        {
-          "driver_vendor": "Mesa",
-          "driver_version": {
-            "op": ">=",
-            "value": "10.0.4"
-          }
-        }
-      ],
-      "features": [
-        "all"
-      ]
-    },
-    {
       "id": 30,
       "description": "NVIDIA cards with nouveau drivers in Linux are crash-prone",
       "cr_bugs": [94103],
@@ -360,19 +236,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "op": "<",
         "value": "7"
       },
-      "features": [
-        "all"
-      ]
-    },
-    {
-      "id": 46,
-      "description": "ATI FireMV 2400 cards on Windows are buggy",
-      "cr_bugs": [124152],
-      "os": {
-        "type": "win"
-      },
-      "vendor_id": "0x1002",
-      "device_id": ["0x3151"],
       "features": [
         "all"
       ]
@@ -593,7 +456,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "vendor_id": "0x10de",
       "device_id": ["0x0163"],
       "features": [
-        "webgl"
       ]
     },
     {
@@ -636,7 +498,6 @@ LONG_STRING_CONST(
         }
       ],
       "features": [
-        "webgl"
       ]
     },
     {
@@ -691,7 +552,6 @@ LONG_STRING_CONST(
       "vendor_id": "0x8086",
       "device_id": ["0xa011"],
       "features": [
-        "webgl"
       ]
     },
     {
@@ -1024,7 +884,6 @@ LONG_STRING_CONST(
       "features": [
         "all",
         {"exceptions": [
-          "webgl"
         ]}
       ]
     },
@@ -1177,7 +1036,6 @@ LONG_STRING_CONST(
       "gl_vendor": "Vivante.*",
       "gl_renderer": ".*PXA.*",
       "features": [
-        "webgl",
         "accelerated_2d_canvas"
       ]
     },

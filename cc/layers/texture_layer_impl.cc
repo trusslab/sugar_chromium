@@ -18,7 +18,6 @@
 #include "cc/resources/single_release_callback_impl.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/occlusion.h"
-
 namespace cc {
 
 TextureLayerImpl::TextureLayerImpl(LayerTreeImpl* tree_impl, int id)
@@ -173,8 +172,7 @@ void TextureLayerImpl::AppendQuads(RenderPass* render_pass,
       !vertex_opacity_[3])
     return;
 
-  TextureDrawQuad* quad =
-      render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
+TextureDrawQuad* quad = render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
   ResourceId id =
       valid_texture_copy_ ? texture_copy_->id() : external_texture_resource_;
   quad->SetNew(shared_quad_state, quad_rect, opaque_rect, visible_quad_rect, id,

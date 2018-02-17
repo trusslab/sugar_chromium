@@ -372,4 +372,7 @@ service_manager::Connector* ServiceManagerContext::GetConnectorForIOThread() {
   return g_io_thread_connector.Get().get();
 }
 
+service_manager::Connector* ServiceManagerContext::GetConnectorForWebglIOThread() {
+  return g_io_thread_connector.Get().get();
+}
 }  // namespace content

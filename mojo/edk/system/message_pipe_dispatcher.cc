@@ -168,6 +168,7 @@ MessagePipeDispatcher::MessagePipeDispatcher(NodeController* node_controller,
   DVLOG(2) << "Creating new MessagePipeDispatcher for port " << port.name()
            << " [pipe_id=" << pipe_id << "; endpoint=" << endpoint << "]";
 
+
   node_controller_->SetPortObserver(
       port_,
       make_scoped_refptr(new PortObserverThunk(this)));
@@ -213,9 +214,9 @@ MojoResult MessagePipeDispatcher::Watch(MojoHandleSignals signals,
                                         const Watcher::WatchCallback& callback,
                                         uintptr_t context) {
   base::AutoLock lock(signal_lock_);
-
-  if (port_closed_ || in_transit_)
-    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (port_closed_ || in_transit_) {
+	return MOJO_RESULT_INVALID_ARGUMENT;
+  }
 
   return awakables_.AddWatcher(
       signals, callback, context, GetHandleSignalsStateNoLock());

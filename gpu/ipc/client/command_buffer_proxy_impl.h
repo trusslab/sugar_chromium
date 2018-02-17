@@ -35,6 +35,8 @@
 #include "ui/gfx/swap_result.h"
 #include "ui/gl/gpu_preference.h"
 
+#include "gpu/itc/service/gpu_thread_channel_manager.h"
+
 struct GPUCommandBufferConsoleMessage;
 struct GPUCreateCommandBufferConfig;
 struct GpuCommandBufferMsg_SwapBuffersCompleted_Params;
@@ -87,6 +89,29 @@ class GPU_EXPORT CommandBufferProxyImpl
       const gpu::gles2::ContextCreationAttribHelper& attribs,
       const GURL& active_url,
       scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+
+  static std::unique_ptr<CommandBufferProxyImpl> CreateForWebgl(
+      scoped_refptr<GpuThreadHost> host,
+      gpu::SurfaceHandle surface_handle,
+      CommandBufferProxyImpl* share_group,
+      int32_t stream_id,
+      gpu::GpuStreamPriority stream_priority,
+      const gpu::gles2::ContextCreationAttribHelper& attribs,
+      const GURL& active_url,
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+	  scoped_refptr<base::SingleThreadTaskRunner> gpu_thread_task_runner,
+	  scoped_refptr<GpuChannelHost> compositor_channel,
+	  int32_t compositor_route_id);
+
+  static std::unique_ptr<CommandBufferProxyImpl> CreateForRenderCompositor(
+      scoped_refptr<GpuChannelHost> host,
+      gpu::SurfaceHandle surface_handle,
+      CommandBufferProxyImpl* share_group,
+      int32_t stream_id,
+      gpu::GpuStreamPriority stream_priority,
+      const gpu::gles2::ContextCreationAttribHelper& attribs,
+      const GURL& active_url,
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   ~CommandBufferProxyImpl() override;
 
   // IPC::Listener implementation:
@@ -102,6 +127,8 @@ class GPU_EXPORT CommandBufferProxyImpl
   void SetGetBuffer(int32_t shm_id) override;
   scoped_refptr<gpu::Buffer> CreateTransferBuffer(size_t size,
                                                   int32_t* id) override;
+  scoped_refptr<gpu::Buffer> CreateTransferBufferForWebgl(size_t size,
+                                                  int32_t* id);
   void DestroyTransferBuffer(int32_t id) override;
 
   // gpu::GpuControl implementation:
@@ -163,12 +190,29 @@ class GPU_EXPORT CommandBufferProxyImpl
   }
   uint32_t CreateStreamTexture(uint32_t texture_id);
 
+  void InsertFenceSyncByToken(gpu::CommandBufferNamespace namespace_id,  
+                              gpu::CommandBufferId command_buffer_id,
+                              uint64_t release);
+
  private:
+  friend class GpuThreadHost;
   typedef std::map<int32_t, scoped_refptr<gpu::Buffer>> TransferBufferMap;
   typedef base::hash_map<uint32_t, base::Closure> SignalTaskMap;
 
   CommandBufferProxyImpl(int channel_id, int32_t route_id, int32_t stream_id);
+  CommandBufferProxyImpl(bool render_compositor, int channel_id, int32_t route_id, int32_t stream_id);
+  CommandBufferProxyImpl(int channel_id, int32_t route_id, int32_t stream_id, bool webgl,
+            scoped_refptr<base::SingleThreadTaskRunner> gpu_thread_task_runner,
+			scoped_refptr<GpuChannelHost> compositor_channel,
+			int32_t compositor_route_id);
   bool Initialize(scoped_refptr<GpuChannelHost> channel,
+                  const GPUCreateCommandBufferConfig& config,
+                  scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+  bool InitializeForWebgl(scoped_refptr<GpuThreadHost> channel,
+                  const GPUCreateCommandBufferConfig& config,
+                  scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+
+  bool InitializeForRenderCompositor(scoped_refptr<GpuChannelHost> channel,
                   const GPUCreateCommandBufferConfig& config,
                   scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
@@ -231,11 +275,16 @@ class GPU_EXPORT CommandBufferProxyImpl
   void LockAndDisconnectChannel();
   void DisconnectChannel();
 
+
+  void Test();
+
   // The shared memory area used to update state.
   gpu::CommandBufferSharedState* shared_state() const;
 
   // The shared memory area used to update state.
   std::unique_ptr<base::SharedMemory> shared_state_shm_;
+
+  gpu::CommandBufferSharedState* shared_state_;
 
   // The last cached state received from the service.
   State last_state_;
@@ -257,6 +306,7 @@ class GPU_EXPORT CommandBufferProxyImpl
   base::ObserverList<DeletionObserver> deletion_observers_;
 
   scoped_refptr<GpuChannelHost> channel_;
+  scoped_refptr<GpuThreadHost> gpu_thread_host_;
   const gpu::CommandBufferId command_buffer_id_;
   const int32_t route_id_;
   const int32_t stream_id_;
@@ -291,6 +341,13 @@ class GPU_EXPORT CommandBufferProxyImpl
 
   base::WeakPtr<CommandBufferProxyImpl> weak_this_;
   scoped_refptr<base::SequencedTaskRunner> callback_thread_;
+
+  bool webgl_ = false;
+  bool render_compositor_ = false;
+  scoped_refptr<base::SingleThreadTaskRunner> gpu_thread_task_runner_;
+  scoped_refptr<base::SequencedTaskRunner> gpu_thread_;
+  scoped_refptr<GpuChannelHost> compositor_channel_;
+  int32_t compositor_route_id_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(CommandBufferProxyImpl);
 };

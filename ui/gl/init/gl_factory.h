@@ -30,6 +30,7 @@ GL_INIT_EXPORT std::vector<GLImplementation> GetAllowedGLImplementations();
 
 // Initializes GL bindings.
 GL_INIT_EXPORT bool InitializeGLOneOff();
+GL_INIT_EXPORT bool InitializeGLOneOff(bool webgl);
 
 // Initializes GL bindings using the provided parameters. This might be required
 // for use in tests, otherwise use InitializeGLOneOff() instead.

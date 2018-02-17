@@ -16,6 +16,7 @@
 #include "cc/trees/swap_promise_manager.h"
 #include "cc/trees/task_runner_provider.h"
 
+#include "base/debug/stack_trace.h"
 namespace cc {
 
 class SatisfySwapPromise : public SwapPromise {

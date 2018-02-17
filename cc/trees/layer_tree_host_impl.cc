@@ -88,7 +88,6 @@
 #include "ui/gfx/geometry/scroll_offset.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
-
 namespace cc {
 namespace {
 
@@ -1123,7 +1122,6 @@ DrawResult LayerTreeHostImpl::PrepareToDraw(FrameData* frame) {
     active_tree_->RootRenderSurface()->damage_tracker()->AddDamageNextUpdate(
         device_viewport_damage_rect);
   }
-
   DrawResult draw_result = CalculateRenderPasses(frame);
   if (draw_result != DRAW_SUCCESS) {
     DCHECK(!resourceless_software_draw_);
@@ -1871,6 +1869,7 @@ void LayerTreeHostImpl::UpdateTreeResourcesForGpuRasterizationIfNeeded() {
   // Prevent the active tree from drawing until activation.
   // TODO(crbug.com/469175): Replace with RequiresHighResToDraw.
   SetRequiresHighResToDraw();
+
 }
 
 void LayerTreeHostImpl::WillBeginImplFrame(const BeginFrameArgs& args) {

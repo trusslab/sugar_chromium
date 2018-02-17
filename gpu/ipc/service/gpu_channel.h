@@ -214,6 +214,13 @@ class GPU_EXPORT GpuChannel : public IPC::Listener, public FilteredSender {
                              base::SharedMemoryHandle shared_state_shm,
                              bool* result,
                              gpu::Capabilities* capabilities);
+  void OnCreateCommandBufferOutProcessSync
+                             (const GPUCreateCommandBufferConfig& init_params,
+                             int32_t route_id,
+                             base::SharedMemoryHandle shared_state_shm,
+							 int32_t renderer_pid,
+                             bool* result,
+                             gpu::Capabilities* capabilities);
   void OnDestroyCommandBuffer(int32_t route_id);
   void OnGetDriverBugWorkArounds(
       std::vector<std::string>* gpu_driver_bug_workarounds);
@@ -221,8 +228,9 @@ class GPU_EXPORT GpuChannel : public IPC::Listener, public FilteredSender {
   std::unique_ptr<GpuCommandBufferStub> CreateCommandBuffer(
       const GPUCreateCommandBufferConfig& init_params,
       int32_t route_id,
-      std::unique_ptr<base::SharedMemory> shared_state_shm);
-
+      std::unique_ptr<base::SharedMemory> shared_state_shm,
+	  bool has_out_process_sync,
+	  int32_t renderer_pid);
   // The lifetime of objects of this class is managed by a GpuChannelManager.
   // The GpuChannelManager destroy all the GpuChannels that they own when they
   // are destroyed. So a raw pointer is safe.

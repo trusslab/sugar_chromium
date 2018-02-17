@@ -11,6 +11,10 @@ GLES2CmdHelper::GLES2CmdHelper(CommandBuffer* command_buffer)
     : CommandBufferHelper(command_buffer) {
 }
 
+GLES2CmdHelper::GLES2CmdHelper(CommandBuffer* command_buffer, bool webgl)
+    : CommandBufferHelper(command_buffer, webgl) {
+}
+
 GLES2CmdHelper::~GLES2CmdHelper() {
 }
 

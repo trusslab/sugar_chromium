@@ -28,6 +28,7 @@
 #include "ui/events/latency_info.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
+
 namespace base {
 class WaitableEvent;
 }
@@ -84,6 +85,14 @@ class GPU_EXPORT GpuChannelHost
       base::WaitableEvent* shutdown_event,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager);
 
+  static scoped_refptr<GpuChannelHost> CreateWebglChannel(
+      GpuChannelHostFactory* factory,
+      int channel_id,
+      const gpu::GPUInfo& gpu_info,
+      const IPC::ChannelHandle& channel_handle,
+      base::WaitableEvent* shutdown_event,
+      gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager);
+
   bool IsLost() const {
     DCHECK(channel_filter_.get());
     return channel_filter_->IsLost();
@@ -96,6 +105,7 @@ class GPU_EXPORT GpuChannelHost
 
   // IPC::Sender implementation:
   bool Send(IPC::Message* msg) override;
+  bool Send(IPC::Message* msg, bool webgl);
 
   // Set an ordering barrier.  AsyncFlushes any pending barriers on other
   // routes. Combines multiple OrderingBarriers into a single AsyncFlush.
@@ -110,6 +120,16 @@ class GPU_EXPORT GpuChannelHost
                            bool do_flush,
                            uint32_t* highest_verified_flush_id);
 
+  uint32_t OrderingBarrier(int32_t route_id,
+                           int32_t stream_id,
+                           int32_t put_offset,
+                           uint32_t flush_count,
+                           const std::vector<ui::LatencyInfo>& latency_info,
+                           bool put_offset_changed,
+                           bool do_flush,
+                           uint32_t* highest_verified_flush_id,
+						   bool webgl);
+  
   void FlushPendingStream(int32_t stream_id);
 
   // Destroy this channel. Must be called on the main thread, before
@@ -238,11 +258,17 @@ class GPU_EXPORT GpuChannelHost
                  int channel_id,
                  const gpu::GPUInfo& gpu_info,
                  gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager);
+  GpuChannelHost(GpuChannelHostFactory* factory,
+                 int channel_id,
+                 const gpu::GPUInfo& gpu_info,
+                 gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+                 bool webgl);
   ~GpuChannelHost() override;
   void Connect(const IPC::ChannelHandle& channel_handle,
                base::WaitableEvent* shutdown_event);
   bool InternalSend(IPC::Message* msg);
   void InternalFlush(StreamFlushInfo* flush_info);
+  void InternalFlush(StreamFlushInfo* flush_info, bool webgl);
 
   // Threading notes: all fields are constant during the lifetime of |this|
   // except:
@@ -275,6 +301,8 @@ class GPU_EXPORT GpuChannelHost
   mutable base::Lock context_lock_;
   std::unique_ptr<IPC::SyncChannel> channel_;
   base::hash_map<int32_t, StreamFlushInfo> stream_flush_info_;
+
+  bool webgl_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChannelHost);
 };

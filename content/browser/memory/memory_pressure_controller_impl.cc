@@ -16,7 +16,6 @@ MemoryPressureControllerImpl::~MemoryPressureControllerImpl() {}
 
 void MemoryPressureControllerImpl::OnMemoryMessageFilterAdded(
     MemoryMessageFilter* filter) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Add the message filter to the set of all memory message filters and check
   // that it wasn't there beforehand.

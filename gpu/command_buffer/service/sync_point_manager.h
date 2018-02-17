@@ -25,6 +25,8 @@
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/gpu_export.h"
 
+#include <sys/syscall.h> 
+
 namespace base {
 class SingleThreadTaskRunner;
 }  // namespace base
@@ -38,7 +40,10 @@ class SyncPointManager;
 class GPU_EXPORT SyncPointOrderData
     : public base::RefCountedThreadSafe<SyncPointOrderData> {
  public:
+  SyncPointOrderData(bool webgl);
+
   static scoped_refptr<SyncPointOrderData> Create();
+  static scoped_refptr<SyncPointOrderData> Create(bool webgl);
   void Destroy();
 
   uint32_t GenerateUnprocessedOrderNumber(SyncPointManager* sync_point_manager);
@@ -57,13 +62,17 @@ class GPU_EXPORT SyncPointOrderData
   }
 
   uint32_t current_order_num() const {
-    DCHECK(processing_thread_checker_.CalledOnValidThread());
+	if (!webgl_) {
+      DCHECK(processing_thread_checker_.CalledOnValidThread());
+    }
     return current_order_num_;
   }
 
   bool IsProcessingOrderNumber() {
-    DCHECK(processing_thread_checker_.CalledOnValidThread());
-    return !paused_ && current_order_num_ > processed_order_num();
+	if (!webgl_) {
+      DCHECK(processing_thread_checker_.CalledOnValidThread());
+    }
+	return !paused_ && current_order_num_ > processed_order_num();
   }
 
  private:
@@ -125,6 +134,8 @@ class GPU_EXPORT SyncPointOrderData
   // Unprocessed order number expected to be processed under normal execution.
   uint32_t unprocessed_order_num_;
 
+  bool webgl_ = false;
+
   // In situations where we are waiting on fence syncs that do not exist, we
   // validate by making sure the order number does not pass the order number
   // which the wait command was issued. If the order number reaches the
@@ -155,6 +166,8 @@ class GPU_EXPORT SyncPointClientState
   friend class base::RefCountedThreadSafe<SyncPointClientState>;
   friend class SyncPointClient;
   friend class SyncPointOrderData;
+
+  friend class GpuCommandBufferStub;
 
   struct ReleaseCallback {
     uint64_t release_count;
@@ -324,6 +337,7 @@ class GPU_EXPORT SyncPointManager {
 
   // Order number is global for all clients.
   base::AtomicSequenceNumber global_order_num_;
+
 
   // Client map holds a map of clients id to client for each namespace.
   base::Lock client_maps_lock_;

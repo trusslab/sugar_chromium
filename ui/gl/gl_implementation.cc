@@ -20,6 +20,7 @@
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_version_info.h"
+#include "base/prints.h"
 
 namespace gl {
 
@@ -131,7 +132,7 @@ void SetGLGetProcAddressProc(GLGetProcAddressProc proc) {
 GLFunctionPointerType GetGLProcAddress(const char* name) {
   DCHECK(g_gl_implementation != kGLImplementationNone);
 
-  if (g_libraries) {
+  if (0) {
     for (size_t i = 0; i < g_libraries->size(); ++i) {
       GLFunctionPointerType proc = reinterpret_cast<GLFunctionPointerType>(
           base::GetFunctionPointerFromNativeLibrary((*g_libraries)[i], name));

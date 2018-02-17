@@ -9,7 +9,7 @@
 #include <algorithm>
 
 #include "gpu/command_buffer/service/texture_manager.h"
-
+#include "base/debug/stack_trace.h"
 namespace gpu {
 namespace gles2 {
 
@@ -47,6 +47,7 @@ void MailboxManagerImpl::ProduceTexture(const Mailbox& mailbox,
   if (texture)
     InsertTexture(mailbox, texture);
 }
+
 
 void MailboxManagerImpl::InsertTexture(const Mailbox& mailbox,
                                        TextureBase* texture) {

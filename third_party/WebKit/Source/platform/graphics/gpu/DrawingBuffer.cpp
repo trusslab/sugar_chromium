@@ -55,6 +55,10 @@
 #include <algorithm>
 #include <memory>
 
+#include "base/debug/stack_trace.h"
+
+#include "base/prints.h"
+
 namespace blink {
 
 namespace {
@@ -253,6 +257,7 @@ bool DrawingBuffer::PrepareTextureMailbox(
   bool forceGpuResult = false;
   return prepareTextureMailboxInternal(outMailbox, outReleaseCallback,
                                        forceGpuResult);
+
 }
 
 bool DrawingBuffer::prepareTextureMailboxInternal(
@@ -326,6 +331,7 @@ bool DrawingBuffer::finishPrepareTextureMailboxSoftware(
       cc::SingleReleaseCallback::Create(convertToBaseCallback(std::move(func)));
   return true;
 }
+
 
 bool DrawingBuffer::finishPrepareTextureMailboxGpu(
     cc::TextureMailbox* outMailbox,
@@ -811,6 +817,7 @@ void DrawingBuffer::beginDestruction() {
 
   if (m_layer)
     GraphicsLayer::unregisterContentsLayer(m_layer->layer());
+
 
   m_client = nullptr;
 }

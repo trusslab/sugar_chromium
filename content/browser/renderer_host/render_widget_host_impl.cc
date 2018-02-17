@@ -106,6 +106,7 @@
 #include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
 #endif
 
+#include "base/prints.h"
 using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
@@ -1833,12 +1834,12 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
   // This trace event is used in
   // chrome/browser/extensions/api/cast_streaming/performance_test.cc
   TRACE_EVENT0("test_fps,benchmark", "OnSwapCompositorFrame");
-
   ViewHostMsg_SwapCompositorFrame::Param param;
   if (!ViewHostMsg_SwapCompositorFrame::Read(&message, &param))
     return false;
   cc::CompositorFrame frame(std::move(std::get<1>(param)));
   uint32_t compositor_frame_sink_id = std::get<0>(param);
+
   std::vector<IPC::Message> messages_to_deliver_with_frame;
   messages_to_deliver_with_frame.swap(std::get<2>(param));
 
@@ -1864,7 +1865,6 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
                                    process_->GetID(), true /* is_swap_ack */,
                                    resources);
   }
-
   RenderProcessHost* rph = GetProcess();
   for (std::vector<IPC::Message>::const_iterator i =
            messages_to_deliver_with_frame.begin();

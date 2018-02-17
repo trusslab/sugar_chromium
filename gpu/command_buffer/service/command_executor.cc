@@ -17,6 +17,8 @@
 #include "ui/gl/gl_fence.h"
 #include "ui/gl/gl_switches.h"
 
+#include "base/prints.h"
+
 using ::base::SharedMemory;
 
 namespace gpu {
@@ -28,7 +30,8 @@ CommandExecutor::CommandExecutor(CommandBufferServiceBase* command_buffer,
       handler_(handler),
       decoder_(decoder),
       scheduled_(true),
-      was_preempted_(false) {}
+      was_preempted_(false) {
+	  }
 
 CommandExecutor::~CommandExecutor() {}
 

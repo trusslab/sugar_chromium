@@ -28,6 +28,7 @@
 #include "build/build_config.h"
 #include "components/tracing/common/tracing_switches.h"
 #include "content/browser/browser_child_process_host_impl.h"
+#include "content/renderer/render_gpu_thread_host_impl.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_main_thread_factory.h"
@@ -98,7 +99,8 @@
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
 #include "gpu/ipc/common/gpu_surface_tracker.h"
 #endif
-
+#include "base/debug/stack_trace.h"
+#include "base/prints.h"
 namespace content {
 
 bool GpuProcessHost::gpu_enabled_ = true;
@@ -391,6 +393,30 @@ GpuProcessHost* GpuProcessHost::Get(GpuProcessKind kind, bool force_create) {
   return NULL;
 }
 
+GpuProcessHost* GpuProcessHost::GetForRender(GpuProcessKind kind, bool force_create, bool webgl) {
+  GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
+  DCHECK(gpu_data_manager);
+  if (!gpu_data_manager->GpuAccessAllowed(NULL))
+    return NULL;
+  if (g_gpu_process_hosts[kind] && ValidateHost(g_gpu_process_hosts[kind]))
+    return g_gpu_process_hosts[kind];
+
+  if (!force_create)
+    return nullptr;
+
+  static int last_host_id = 0;
+  int host_id;
+  host_id = ++last_host_id;
+  GpuProcessHost* host = new GpuProcessHost(host_id, kind, webgl);
+  if (host->InitForWebgl()) {
+    return host;
+  }
+  host->RecordProcessCrash();
+
+  delete host;
+  return NULL;
+}
+
 // static
 void GpuProcessHost::GetProcessHandles(
     const GpuDataManager::GetGpuProcessHandlesCallback& callback)  {
@@ -431,7 +457,6 @@ service_manager::InterfaceProvider* GpuProcessHost::GetRemoteInterfaces() {
 
 // static
 GpuProcessHost* GpuProcessHost::FromID(int host_id) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   for (int i = 0; i < GPU_PROCESS_KIND_COUNT; ++i) {
     GpuProcessHost* host = g_gpu_process_hosts[i];
@@ -477,6 +502,22 @@ GpuProcessHost::GpuProcessHost(int host_id, GpuProcessKind kind)
 
   process_.reset(new BrowserChildProcessHostImpl(
       PROCESS_TYPE_GPU, this, mojom::kGpuServiceName));
+}
+
+GpuProcessHost::GpuProcessHost(int host_id, GpuProcessKind kind, bool webgl)
+    : host_id_(host_id),
+      valid_(true),
+      in_process_(webgl),
+      swiftshader_rendering_(false),
+      kind_(kind),
+      process_launched_(false),
+      initialized_(false),
+	  webgl_(webgl),
+      gpu_host_binding_(this),
+      weak_ptr_factory_(this) {
+  DCHECK(!in_process_ || g_gpu_process_hosts[kind] == NULL);
+  g_gpu_process_hosts[kind] = this;
+  processforwebgl_.reset(new RenderGpuThreadHostImpl(PROCESS_TYPE_GPU, this, mojom::kGpuServiceName));
 }
 
 GpuProcessHost::~GpuProcessHost() {
@@ -568,6 +609,59 @@ GpuProcessHost::~GpuProcessHost() {
                                      host_id_,
                                      message));
 }
+bool GpuProcessHost::InitForWebgl() {
+  init_start_time_ = base::TimeTicks::Now();
+
+  TRACE_EVENT_INSTANT0("gpu", "LaunchGpuThread", TRACE_EVENT_SCOPE_THREAD);
+
+  if (ServiceManagerConnection::GetForProcess()) {
+    ServiceManagerConnection::GetForProcess()->AddConnectionFilter(
+        base::MakeUnique<ConnectionFilterImpl>(this));
+  }
+
+  processforwebgl_->GetHost()->CreateChannelMojo();
+
+  gpu::GpuPreferences gpu_preferences = GetGpuPreferencesFromCommandLine();
+  if (in_process_) {
+    DCHECK(GetGpuMainThreadFactory());
+    in_process_gpu_thread_.reset(GetGpuMainThreadFactory()(
+        InProcessChildThreadParams(
+		    true, 
+			base::MessageLoop::current()->task_runner(),
+            processforwebgl_->child_connection()->service_token()),
+        gpu_preferences));
+    base::Thread::Options options;
+#if defined(OS_WIN)
+    options.message_loop_type = base::MessageLoop::TYPE_UI;
+#endif
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+    options.priority = base::ThreadPriority::DISPLAY;
+#endif
+    in_process_gpu_thread_->StartWithOptions(options);
+
+    OnProcessLaunched();  
+  } else if (!LaunchGpuProcess(&gpu_preferences)) {
+    return false;
+  }
+  
+  processforwebgl_->child_channel()
+      ->GetAssociatedInterfaceSupport()
+      ->GetRemoteAssociatedInterface(&gpu_main_ptr_);
+  ui::mojom::GpuServiceRequest request(&gpu_service_ptr_);
+  gpu_main_ptr_->CreateGpuService(std::move(request),
+                                  gpu_host_binding_.CreateInterfacePtrAndBind(),
+                                  gpu_preferences);
+
+#if defined(USE_OZONE)
+  ui::OzonePlatform::GetInstance()
+      ->GetGpuPlatformSupportHost()
+      ->OnGpuProcessLaunched(
+          host_id_, BrowserThread::GetTaskRunnerForThread(BrowserThread::IO),
+          base::Bind(&SendGpuProcessMessageByHostId, host_id_));
+#endif
+
+  return true;
+}
 
 bool GpuProcessHost::Init() {
   init_start_time_ = base::TimeTicks::Now();
@@ -627,6 +721,7 @@ bool GpuProcessHost::Init() {
   return true;
 }
 
+
 void GpuProcessHost::RouteOnUIThread(const IPC::Message& message) {
   BrowserThread::PostTask(
       BrowserThread::UI,
@@ -636,12 +731,43 @@ void GpuProcessHost::RouteOnUIThread(const IPC::Message& message) {
 
 bool GpuProcessHost::Send(IPC::Message* msg) {
   DCHECK(CalledOnValidThread());
-  if (process_->GetHost()->IsChannelOpening()) {
-    queued_messages_.push(msg);
-    return true;
+  bool result;
+  if(webgl_) {
+    if (processforwebgl_->GetHost()->IsChannelOpening()) {
+      return true;
+    }
+	result = processforwebgl_->Send(msg);
+  } else {
+    if (process_->GetHost()->IsChannelOpening()) {
+      queued_messages_.push(msg);
+      return true;
+	}
+	result = process_->Send(msg); 
+  } 
+
+  if (!result) {
+    SendOutstandingReplies();
+  }
+  return result;
+}
+
+bool GpuProcessHost::Send(IPC::Message* msg, bool webgl) {
+  DCHECK(CalledOnValidThread());
+  bool result;
+  if(webgl) {
+       if (processforwebgl_->GetHost()->IsChannelOpening()) {
+          queued_messages_.push(msg);
+         return true;
+	}
+	result = processforwebgl_->Send(msg);
+  } else {
+    if (process_->GetHost()->IsChannelOpening()) {
+         queued_messages_.push(msg);
+         return true;
+	}
+	result = process_->Send(msg); 
   }
 
-  bool result = process_->Send(msg);
   if (!result) {
     // Channel is hosed, but we may not get destroyed for a while. Send
     // outstanding channel creation failures now so that the caller can restart
@@ -675,7 +801,6 @@ bool GpuProcessHost::OnMessageReceived(const IPC::Message& message) {
 
 void GpuProcessHost::OnChannelConnected(int32_t peer_pid) {
   TRACE_EVENT0("gpu", "GpuProcessHost::OnChannelConnected");
-
   while (!queued_messages_.empty()) {
     Send(queued_messages_.front());
     queued_messages_.pop();
@@ -691,7 +816,6 @@ void GpuProcessHost::EstablishGpuChannel(
     const EstablishChannelCallback& callback) {
   DCHECK(CalledOnValidThread());
   TRACE_EVENT0("gpu", "GpuProcessHost::EstablishGpuChannel");
-
   // If GPU features are already blacklisted, no need to establish the channel.
   if (!GpuDataManagerImpl::GetInstance()->GpuAccessAllowed(NULL)) {
     DVLOG(1) << "GPU blacklisted, refusing to open a GPU channel.";
@@ -710,7 +834,7 @@ void GpuProcessHost::EstablishGpuChannel(
                  weak_ptr_factory_.GetWeakPtr(), client_id, callback));
 
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableGpuShaderDiskCache)) {
+      switches::kDisableGpuShaderDiskCache) && !webgl_) {
     CreateChannelCache(client_id);
   }
 }
@@ -928,6 +1052,7 @@ void GpuProcessHost::SetChildSurface(gpu::SurfaceHandle parent_handle,
       DWORD process_id = 0;
       DWORD thread_id = GetWindowThreadProcessId(window_handle, &process_id);
 
+
       if (!thread_id || process_id != process_->GetProcess().Pid()) {
         process_->TerminateOnBadMessageReceived(kBadMessageError);
         return;
@@ -941,6 +1066,13 @@ void GpuProcessHost::SetChildSurface(gpu::SurfaceHandle parent_handle,
   }
 #endif
 }
+
+#if defined(OS_MACOSX)
+void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
+    const IPC::Message& message) {
+  RenderWidgetResizeHelper::PostGpuProcessMsg(host_id_, message);
+}
+#endif
 
 void GpuProcessHost::StoreShaderToDisk(int32_t client_id,
                                        const std::string& key,

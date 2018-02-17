@@ -16,8 +16,10 @@
 namespace gpu {
 class GpuMemoryBufferFactory;
 struct GpuPreferences;
+  namespace gles2 {
+   class MailboxManager;
+  }
 }
-
 namespace content {
 
 class GpuProcess;
@@ -33,7 +35,6 @@ class InProcessGpuThread : public base::Thread {
  protected:
   void Init() override;
   void CleanUp() override;
-
  private:
   InProcessChildThreadParams params_;
 
@@ -41,6 +42,8 @@ class InProcessGpuThread : public base::Thread {
   GpuProcess* gpu_process_;
 
   const gpu::GpuPreferences gpu_preferences_;
+
+  scoped_refptr<gpu::gles2::MailboxManager> mailbox_manager_;
 
   std::unique_ptr<gpu::GpuMemoryBufferFactory> gpu_memory_buffer_factory_;
 

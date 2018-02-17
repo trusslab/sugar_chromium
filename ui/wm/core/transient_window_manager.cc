@@ -32,7 +32,7 @@ TransientWindowManager::~TransientWindowManager() {
 }
 
 // static
-TransientWindowManager* TransientWindowManager::Get(Window* window) {
+TransientWindowManager* TransientWindowManager::Get(aura::Window* window) {
   TransientWindowManager* manager = window->GetProperty(kPropertyKey);
   if (!manager) {
     manager = new TransientWindowManager(window);
@@ -43,7 +43,7 @@ TransientWindowManager* TransientWindowManager::Get(Window* window) {
 
 // static
 const TransientWindowManager* TransientWindowManager::Get(
-    const Window* window) {
+    const aura::Window* window) {
   return window->GetProperty(kPropertyKey);
 }
 
@@ -55,7 +55,7 @@ void TransientWindowManager::RemoveObserver(TransientWindowObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void TransientWindowManager::AddTransientChild(Window* child) {
+void TransientWindowManager::AddTransientChild(aura::Window* child) {
   // TransientWindowStackingClient does the stacking of transient windows. If it
   // isn't installed stacking is going to be wrong.
   DCHECK(TransientWindowStackingClient::instance_);
@@ -82,7 +82,7 @@ void TransientWindowManager::AddTransientChild(Window* child) {
     observer.OnTransientChildAdded(window_, child);
 }
 
-void TransientWindowManager::RemoveTransientChild(Window* child) {
+void TransientWindowManager::RemoveTransientChild(aura::Window* child) {
   Windows::iterator i =
       std::find(transient_children_.begin(), transient_children_.end(), child);
   DCHECK(i != transient_children_.end());
@@ -111,7 +111,7 @@ bool TransientWindowManager::IsStackingTransient(
   return stacking_target_ == target;
 }
 
-TransientWindowManager::TransientWindowManager(Window* window)
+TransientWindowManager::TransientWindowManager(aura::Window* window)
     : window_(window),
       transient_parent_(NULL),
       stacking_target_(NULL),
@@ -122,19 +122,19 @@ TransientWindowManager::TransientWindowManager(Window* window)
 }
 
 void TransientWindowManager::RestackTransientDescendants() {
-  Window* parent = window_->parent();
+  aura::Window* parent = window_->parent();
   if (!parent)
     return;
 
   // Stack any transient children that share the same parent to be in front of
   // |window_|. The existing stacking order is preserved by iterating backwards
   // and always stacking on top.
-  Window::Windows children(parent->children());
-  for (Window::Windows::reverse_iterator it = children.rbegin();
+  aura::Window::Windows children(parent->children());
+  for (aura::Window::Windows::reverse_iterator it = children.rbegin();
        it != children.rend(); ++it) {
     if ((*it) != window_ && HasTransientAncestor(*it, window_)) {
       TransientWindowManager* descendant_manager = Get(*it);
-      base::AutoReset<Window*> resetter(
+      base::AutoReset<aura::Window*> resetter(
           &descendant_manager->stacking_target_,
           window_);
       for (aura::client::TransientWindowClientObserver& observer :
@@ -154,7 +154,7 @@ void TransientWindowManager::OnWindowParentChanged(aura::Window* window,
                                                    aura::Window* parent) {
   DCHECK_EQ(window_, window);
   // Stack |window| properly if it is transient child of a sibling.
-  Window* transient_parent = wm::GetTransientParent(window);
+  aura::Window* transient_parent = wm::GetTransientParent(window);
   if (transient_parent && transient_parent->parent() == parent) {
     TransientWindowManager* transient_parent_manager =
         Get(transient_parent);
@@ -175,14 +175,13 @@ void TransientWindowManager::UpdateTransientChildVisibility(
   }
 }
 
-void TransientWindowManager::OnWindowVisibilityChanged(Window* window,
+void TransientWindowManager::OnWindowVisibilityChanged(aura::Window* window,
                                                        bool visible) {
   if (window_ != window)
     return;
 
   // If the window has transient children, updates the transient children's
   // visiblity as well.
-  // WindowTracker is used because child window
   // could be deleted inside UpdateTransientChildVisibility call.
   aura::WindowTracker tracker(transient_children_);
   while (!tracker.windows().empty())
@@ -207,11 +206,11 @@ void TransientWindowManager::OnWindowVisibilityChanged(Window* window,
   }
 }
 
-void TransientWindowManager::OnWindowStackingChanged(Window* window) {
+void TransientWindowManager::OnWindowStackingChanged(aura::Window* window) {
   DCHECK_EQ(window_, window);
   // Do nothing if we initiated the stacking change.
   const TransientWindowManager* transient_manager =
-      Get(static_cast<const Window*>(window));
+      Get(static_cast<const aura::Window*>(window));
   if (transient_manager && transient_manager->stacking_target_) {
     Windows::const_iterator window_i = std::find(
         window->parent()->children().begin(),
@@ -226,7 +225,7 @@ void TransientWindowManager::OnWindowStackingChanged(Window* window) {
   RestackTransientDescendants();
 }
 
-void TransientWindowManager::OnWindowDestroying(Window* window) {
+void TransientWindowManager::OnWindowDestroying(aura::Window* window) {
   // Removes ourselves from our transient parent (if it hasn't been done by the
   // RootWindow).
   if (transient_parent_) {

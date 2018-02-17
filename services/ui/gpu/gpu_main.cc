@@ -119,6 +119,7 @@ void GpuMain::CreateGpuService(mojom::GpuServiceRequest request,
                                const gpu::GpuPreferences& preferences) {
   // |this| will outlive the gpu thread and so it's safe to use
   // base::Unretained here.
+  fprintf(stderr, "success[1]: GpuMain::CreateGpuService\n");
   gpu_thread_.task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&GpuMain::CreateGpuServiceOnGpuThread, base::Unretained(this),

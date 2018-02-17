@@ -82,6 +82,8 @@
 #include "wtf/CheckedNumeric.h"
 #include "wtf/PtrUtil.h"
 
+#include "base/prints.h"
+
 namespace blink {
 
 using namespace HTMLNames;

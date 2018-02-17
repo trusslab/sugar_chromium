@@ -74,6 +74,16 @@ class GPU_EXPORT GpuChannelManager {
                     SyncPointManager* sync_point_manager,
                     GpuMemoryBufferFactory* gpu_memory_buffer_factory,
                     const GpuFeatureInfo& gpu_feature_info);
+  GpuChannelManager(const GpuPreferences& gpu_preferences,
+                    GpuChannelManagerDelegate* delegate,
+                    GpuWatchdogThread* watchdog,
+                    base::SingleThreadTaskRunner* task_runner,
+                    base::SingleThreadTaskRunner* io_task_runner,
+                    base::WaitableEvent* shutdown_event,
+                    SyncPointManager* sync_point_manager,
+                    GpuMemoryBufferFactory* gpu_memory_buffer_factory,
+                    const GpuFeatureInfo& gpu_feature_info,
+	                gles2::MailboxManager* mailbox_manager);
   virtual ~GpuChannelManager();
 
   GpuChannelManagerDelegate* delegate() const { return delegate_; }
@@ -137,7 +147,7 @@ class GPU_EXPORT GpuChannelManager {
   }
 
   gles2::MailboxManager* mailbox_manager() const {
-    return mailbox_manager_.get();
+	return mailbox_manager_.get();
   }
 
   gl::GLShareGroup* share_group() const { return share_group_.get(); }

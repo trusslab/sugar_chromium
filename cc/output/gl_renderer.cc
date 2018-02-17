@@ -559,7 +559,6 @@ void GLRenderer::DoDrawQuad(const DrawQuad* quad,
   if (quad->material != DrawQuad::TEXTURE_CONTENT) {
     FlushTextureQuadCache(SHARED_BINDING);
   }
-
   switch (quad->material) {
     case DrawQuad::INVALID:
       NOTREACHED();
@@ -2339,7 +2338,6 @@ void GLRenderer::EnqueueTextureQuad(const TextureDrawQuad* quad,
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
       gl_, &highp_threshold_cache_, highp_threshold_min_,
       quad->shared_quad_state->visible_quad_layer_rect.bottom_right());
-
   ResourceProvider::ScopedReadLockGL lock(resource_provider_,
                                           quad->resource_id());
   const SamplerType sampler = SamplerTypeFromTextureTarget(lock.target());

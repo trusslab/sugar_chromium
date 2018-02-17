@@ -49,7 +49,8 @@ GpuService::GpuService(const gpu::GPUInfo& gpu_info,
       gpu_memory_buffer_factory_(gpu_memory_buffer_factory),
       gpu_info_(gpu_info),
       gpu_feature_info_(gpu_feature_info),
-      sync_point_manager_(nullptr) {}
+      sync_point_manager_(nullptr) {
+	  }
 
 GpuService::~GpuService() {
   bindings_.CloseAllBindings();
@@ -97,6 +98,42 @@ void GpuService::InitializeWithHost(mojom::GpuHostPtr gpu_host,
       base::ThreadTaskRunnerHandle::Get().get(), io_runner_.get(),
       shutdown_event ? shutdown_event : &shutdown_event_, sync_point_manager_,
       gpu_memory_buffer_factory_, gpu_feature_info_));
+
+  media_gpu_channel_manager_.reset(
+      new media::MediaGpuChannelManager(gpu_channel_manager_.get()));
+}
+
+void GpuService::InitializeWithHost2(mojom::GpuHostPtr gpu_host,
+                                    const gpu::GpuPreferences& preferences,
+                                    gpu::SyncPointManager* sync_point_manager,
+                                    base::WaitableEvent* shutdown_event,
+									gpu::gles2::MailboxManager* mailbox_manager) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(!gpu_host_);
+  gpu_host_ = std::move(gpu_host);
+  gpu_preferences_ = preferences;
+  gpu_info_.video_decode_accelerator_capabilities =
+      media::GpuVideoDecodeAccelerator::GetCapabilities(gpu_preferences_);
+  gpu_info_.video_encode_accelerator_supported_profiles =
+      media::GpuVideoEncodeAccelerator::GetSupportedProfiles(gpu_preferences_);
+  gpu_info_.jpeg_decode_accelerator_supported =
+      media::GpuJpegDecodeAcceleratorFactoryProvider::
+          IsAcceleratedJpegDecodeSupported();
+  gpu_host_->DidInitialize(gpu_info_);
+
+  sync_point_manager_ = sync_point_manager;
+  if (!sync_point_manager_) {
+    const bool allow_threaded_wait = false;
+    owned_sync_point_manager_ =
+        base::MakeUnique<gpu::SyncPointManager>(allow_threaded_wait);
+    sync_point_manager_ = owned_sync_point_manager_.get();
+  }
+
+  gpu_channel_manager_.reset(new gpu::GpuChannelManager(
+      gpu_preferences_, this, watchdog_thread_.get(),
+      base::ThreadTaskRunnerHandle::Get().get(), io_runner_.get(),
+      shutdown_event ? shutdown_event : &shutdown_event_, sync_point_manager_,
+      gpu_memory_buffer_factory_, gpu_feature_info_, mailbox_manager));
 
   media_gpu_channel_manager_.reset(
       new media::MediaGpuChannelManager(gpu_channel_manager_.get()));
@@ -171,11 +208,11 @@ void GpuService::EstablishGpuChannel(
     bool is_gpu_host,
     const EstablishGpuChannelCallback& callback) {
   DCHECK(CalledOnValidThread());
-
   if (!gpu_channel_manager_) {
     callback.Run(mojo::ScopedMessagePipeHandle());
     return;
   }
+
 
   const bool preempts = is_gpu_host;
   const bool allow_view_command_buffers = is_gpu_host;

@@ -19,6 +19,9 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
 
+#include "base/tracked_objects.h"
+#include "base/debug/stack_trace.h"
+
 #if defined(OS_MACOSX)
 #include "base/message_loop/message_pump_mac.h"
 #endif
@@ -31,6 +34,8 @@
 #if defined(USE_GLIB)
 #include "base/message_loop/message_pump_glib.h"
 #endif
+
+#include "base/prints.h"
 
 namespace base {
 
@@ -219,6 +224,7 @@ void MessageLoop::AddNestingObserver(NestingObserver* observer) {
   CHECK(allow_nesting_);
   nesting_observers_.AddObserver(observer);
 }
+
 
 void MessageLoop::RemoveNestingObserver(NestingObserver* observer) {
   DCHECK_EQ(this, current());
@@ -416,7 +422,7 @@ void MessageLoop::RunTask(PendingTask* pending_task) {
   // Execute the task and assume the worst: It is probably not reentrant.
   nestable_tasks_allowed_ = false;
 
-  TRACE_TASK_EXECUTION("MessageLoop::RunTask", *pending_task);
+
 
   for (auto& observer : task_observers_)
     observer.WillProcessTask(*pending_task);

@@ -175,6 +175,11 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
       const blink::WebURL& top_document_web_url,
       blink::WebGraphicsContext3DProvider* share_provider,
       blink::Platform::GraphicsInfo* gl_info) override;
+  blink::WebGraphicsContext3DProvider* createOffscreenGraphicsContext3DProviderForWebgl(
+      const blink::Platform::ContextAttributes& attributes,
+      const blink::WebURL& top_document_web_url,
+      blink::WebGraphicsContext3DProvider* share_provider,
+      blink::Platform::GraphicsInfo* gl_info) override;
   blink::WebGraphicsContext3DProvider*
   createSharedOffscreenGraphicsContext3DProvider() override;
   gpu::GpuMemoryBufferManager* getGpuMemoryBufferManager() override;

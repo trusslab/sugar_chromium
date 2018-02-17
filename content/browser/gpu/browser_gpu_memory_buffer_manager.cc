@@ -27,6 +27,18 @@
 #include "ui/gfx/gpu_memory_buffer_tracing.h"
 #include "ui/gl/gl_switches.h"
 
+#if defined(OS_MACOSX)
+#include "content/common/gpu/gpu_memory_buffer_factory_io_surface.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include "content/common/gpu/gpu_memory_buffer_factory_surface_texture.h"
+#endif
+
+#if defined(USE_OZONE)
+#include "content/common/gpu/gpu_memory_buffer_factory_ozone_native_pixmap.h"
+#endif
+#include "base/debug/stack_trace.h"
 namespace content {
 namespace {
 

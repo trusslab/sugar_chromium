@@ -376,6 +376,7 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
 
   PrintToStderr("[end of stack trace]\n");
 
+
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   if (::signal(signal, SIG_DFL) == SIG_ERR)
     _exit(1);

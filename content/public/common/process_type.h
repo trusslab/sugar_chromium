@@ -33,6 +33,7 @@ enum ProcessType {
   // We can switch to getting it from ContentClient, but that seems like
   // overkill at this time.
   PROCESS_TYPE_MAX = PROCESS_TYPE_CONTENT_END + 10,
+  PROCESS_TYPE_RENDER_GPU,
 };
 
 // Returns an English name of the process type, should only be used for non
